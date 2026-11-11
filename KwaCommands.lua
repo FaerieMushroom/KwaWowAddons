@@ -1,5 +1,8 @@
 local addonName, KKK = ...
 
+local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+local GetCoinTextureString = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+
 -- Expose KKK to global for WeakAuras if needed, or keep it private
 -- For now, we'll keep MyKillCountTable global as it's a SavedVariable
 -- but we'll put shared functions into KKK
@@ -186,6 +189,7 @@ function KKK.ShowHelp()
     print("- /kwatopvendor: Top 10 most profitable (Vendor).")
     print("- /kwatopauction: Top 10 most profitable (Auction).")
     print("- /kwapurge: Clear loot data (keeps kill counts).")
+    print("- /kwafullpurge: Reset ALL kills, loot, XP and values.")
     print("- /kwahelp: Shows this list.")
     print("----------------------------")
 end
@@ -202,6 +206,15 @@ function KKK.PurgeData()
         end
     end
     print("|cffff0000[KwaKillCounter] Purged loot and value data for " .. count .. " NPCs. (Kill counts preserved)|r")
+end
+
+function KKK.FullPurgeData()
+    if KKK.FullReset then
+        KKK.FullReset()
+    else
+        MyKillCountTable = {}
+    end
+    print("|cffff0000[KwaKillCounter] Full reset complete. All kills, loot, XP and value data cleared.|r")
 end
 
 SLASH_KWAKILLS1 = "/kwakills"
@@ -221,6 +234,9 @@ SlashCmdList["KWATOPAUCTION"] = KKK.ShowTopAuction
 
 SLASH_KWAPURGE1 = "/kwapurge"
 SlashCmdList["KWAPURGE"] = KKK.PurgeData
+
+SLASH_KWAFULLPURGE1 = "/kwafullpurge"
+SlashCmdList["KWAFULLPURGE"] = KKK.FullPurgeData
 
 SLASH_KWAHELP1 = "/kwahelp"
 SlashCmdList["KWAHELP"] = KKK.ShowHelp

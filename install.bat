@@ -1,6 +1,6 @@
 @echo off
 setlocal
-set "DEST_DIR=C:\Program Files (x86)\World of Warcraft\_classic_era_\Interface\AddOns\KwaKillCounter"
+set "DEST_DIR=C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\KwaKillCounter"
 if not exist "%DEST_DIR%" (
     mkdir "%DEST_DIR%"
 )
