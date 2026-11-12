@@ -8,7 +8,7 @@ KKK.Tracker = Tracker
 
 local FRAME_WIDTH = 292
 local FRAME_HEIGHT = 458
-local HEADER_HEIGHT = 28
+local HEADER_HEIGHT = 50
 local ITEM_HEIGHT = 15
 local EMPTY_HEIGHT = 18
 local ROW_GAP = 4
@@ -803,7 +803,7 @@ local function SessionTotals()
         coin = coin + (entry.coin or 0)
         auction = auction + SumAuction(entry.items)
     end
-    return vendor, auction + coin, coin
+    return vendor + coin, auction + coin
 end
 
 local function SourceTotals(source)
@@ -813,7 +813,7 @@ local function SourceTotals(source)
         coin = coin + (item.coin or 0)
         auction = auction + SumAuction(item.items)
     end
-    return vendor, auction + coin, coin
+    return vendor + coin, auction + coin
 end
 
 local function UpdateMinimizedSize()
@@ -842,10 +842,9 @@ end
 
 local function UpdateMinimizedLabel()
     if minimizedLabel then
-        local vendor, auction, coin = SessionTotals()
+        local vendor, auction = SessionTotals()
         minimizedLabel:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
-            .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction)
-            .. "\n|cff9d9d9dCoin:|r " .. FormatMoney(coin))
+            .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction))
         UpdateMinimizedSize()
     end
 end
@@ -865,11 +864,10 @@ Refresh = function()
     content:SetWidth(rowWidth)
 
     local source = sessionView and BuildSessionSource() or BuildOverallSource()
-    local totalVendor, totalAuction, totalCoin = SourceTotals(source)
+    local totalVendor, totalAuction = SourceTotals(source)
     if totalsLabel then
         totalsLabel:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(totalVendor)
-            .. "   |cff9d9d9dAuction:|r " .. FormatMoney(totalAuction)
-            .. "\n|cff9d9d9dCoin:|r " .. FormatMoney(totalCoin))
+            .. "   |cff9d9d9dAuction:|r " .. FormatMoney(totalAuction))
     end
 
     local rows = BuildRows(source)
