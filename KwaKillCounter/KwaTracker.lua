@@ -1060,7 +1060,7 @@ local function CreateUI()
     totalsLabel:SetWordWrap(false)
 
     scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -92)
+    scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -68)
     scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 28)
     if scroll.ScrollBar then
         scroll.ScrollBar:ClearAllPoints()
