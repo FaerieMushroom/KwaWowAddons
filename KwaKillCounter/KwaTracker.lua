@@ -8,7 +8,7 @@ KKK.Tracker = Tracker
 
 local FRAME_WIDTH = 292
 local FRAME_HEIGHT = 458
-local HEADER_HEIGHT = 46
+local HEADER_HEIGHT = 28
 local ITEM_HEIGHT = 15
 local EMPTY_HEIGHT = 18
 local ROW_GAP = 4
@@ -32,7 +32,7 @@ local footer
 local minimized = false
 
 local MINIMIZED_WIDTH = FRAME_WIDTH
-local MINIMIZED_HEIGHT = 42
+local MINIMIZED_HEIGHT = 28
 local MINIMIZED_MIN_WIDTH = 140
 local MINIMIZED_MAX_WIDTH = 340
 
