@@ -39,6 +39,7 @@ frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
 frame:RegisterEvent("PLAYER_XP_UPDATE")
 frame:RegisterEvent("LOOT_OPENED")
 frame:RegisterEvent("LOOT_READY")
+frame:RegisterEvent("CHAT_MSG_MONEY")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 local pendingKillQueue = {}
@@ -46,6 +47,72 @@ local processedGUIDs = {}
 local processedItemGUIDs = {}
 local lastTargetCache = nil -- { npcID, name, race, time }
 local lastPlayerXP = nil
+
+-- Session-only loot state. This is intentionally *not* persisted: every addon
+-- load starts with an empty list, and only mobs killed/looted since then appear
+-- in the tracker's Session view.
+local session = { mobs = {}, nextSeq = 0 }
+KKK.Session = session
+
+local lootSnapshots = {} -- [stable loot key] = { money, coin, items }
+local lootGenerations = {} -- [npcID] = kill generation, used when source GUID is secret
+local lastLootNpcID = nil
+local lastLootTime = 0
+
+-- Coin can be reported twice: once from the loot slot and once from the
+-- "You loot ..." chat message. These records let us keep whichever arrives
+-- first and ignore the duplicate, regardless of event order.
+local COIN_DEDUPE_WINDOW = 6
+local recentCoinEvents = {} -- { npcID, amount, time, source }
+
+function KKK.NotifyTracker(reason, npcID)
+    if KKK.Tracker and KKK.Tracker.OnDataChanged then
+        KKK.Tracker.OnDataChanged(reason, npcID)
+    end
+end
+
+function KKK.GetSessionMob(npcID, name, race)
+    if not npcID then return nil end
+    npcID = tostring(npcID)
+    local entry = session.mobs[npcID]
+    if not entry then
+        entry = {
+            id = npcID,
+            name = name or ("NPC " .. npcID),
+            race = race,
+            items = {},
+            vendor = 0,
+            looted = 0,
+            kills = 0,
+            seq = 0,
+        }
+        session.mobs[npcID] = entry
+    end
+    if name and name ~= "" then entry.name = name end
+    if race and race ~= "Unspecified" then entry.race = race end
+    return entry
+end
+
+function KKK.TouchSessionMob(npcID, name, race)
+    local entry = KKK.GetSessionMob(npcID, name, race)
+    session.nextSeq = session.nextSeq + 1
+    entry.seq = session.nextSeq
+    entry.kills = (entry.kills or 0) + 1
+    return entry
+end
+
+function KKK.ResetSessionMob(npcID, silent)
+    if not npcID then return end
+    session.mobs[tostring(npcID)] = nil
+    if not silent then
+        KKK.NotifyTracker("session-reset", npcID)
+    end
+end
+
+function KKK.ResetSession()
+    session.mobs = {}
+    session.nextSeq = 0
+end
 
 local function SafeUnitXP()
     if not UnitXP then return nil end
@@ -132,17 +199,29 @@ local function RecordKill(npcID, name, race)
     if not npcID or not MyKillCountTable then return end
     npcID = tostring(npcID)
     if not MyKillCountTable[npcID] then
-        MyKillCountTable[npcID] = {count = 0, looted = 0, name = name or "Unknown NPC", race = race or "Unspecified", xp = 0, avgLootValue = 0, items = {}}
+        MyKillCountTable[npcID] = {count = 0, looted = 0, name = name or "Unknown NPC", race = race or "Unspecified", xp = 0, avgLootValue = 0, items = {}, itemCounts = {}, coin = 0}
     end
     local entry = MyKillCountTable[npcID]
     entry.items = entry.items or {}
     entry.count = (entry.count or 0) + 1
     entry.looted = entry.looted or 0
+    -- Each new kill gets a new loot generation. This keeps repeated loot
+    -- windows for the *same* corpse from being counted more than once, while
+    -- still allowing the next kill of the same NPC to count again.
+    lootGenerations[npcID] = (lootGenerations[npcID] or 0) + 1
     if name and name ~= "" then entry.name = name end
     if race and race ~= "Unspecified" then entry.race = race end
     if not entry.avgLootValue then entry.avgLootValue = 0 end
     table.insert(pendingKillQueue, { id = npcID, time = GetTime() })
     if #pendingKillQueue > 10 then table.remove(pendingKillQueue, 1) end
+
+    -- Tracker session: every kill moves this mob's section to the top.
+    KKK.TouchSessionMob(npcID, entry.name, entry.race)
+    -- The corpse we are about to loot is this mob; this lets coin chat
+    -- messages that arrive before LOOT_READY still be attributed correctly.
+    lastLootNpcID = npcID
+    lastLootTime = GetTime()
+    KKK.NotifyTracker("kill", npcID)
 end
 
 local function ResolveLootNpcID(guid)
@@ -164,9 +243,153 @@ local function ResolveLootNpcID(guid)
     return nil
 end
 
-local function UpdateLootValue()
+local function StripMoneyEscapes(text)
+    if type(text) ~= "string" then return "" end
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+    text = text:gsub("|r", "")
+    text = text:gsub("|T.-|t", "")
+    text = text:gsub("|A.-|a", "")
+    text = text:gsub("|H.-|h", "")
+    return text
+end
+
+local function EscapePattern(text)
+    return (text:gsub("([%%%^%$%(%)%.%[%]%*%+%-%?])", "%%%1"))
+end
+
+local coinWordMap
+local function EnsureCoinWordMap()
+    if coinWordMap then return end
+    coinWordMap = {
+        gold = 10000, g = 10000,
+        silver = 100, s = 100,
+        copper = 1, c = 1,
+    }
+
+    if GetMoneyString then
+        local denominations = { {10000, "gold"}, {100, "silver"}, {1, "copper"} }
+        for _, info in ipairs(denominations) do
+            local ok, text = pcall(GetMoneyString, info[1], true)
+            if ok and type(text) == "string" then
+                local word = StripMoneyEscapes(text):gsub("%d", ""):gsub("[%s,%.]+", "")
+                word = word:lower()
+                if word ~= "" then
+                    coinWordMap[word] = info[1]
+                end
+            end
+        end
+    end
+end
+
+-- Turn a "You loot ..." chat line into a copper amount.
+local function ParseMoneyMessage(message)
+    if type(message) ~= "string" or message == "" then return nil end
+    if isSecret(message) or not canAccess(message) then return nil end
+    EnsureCoinWordMap()
+
+    local text = StripMoneyEscapes(message):lower()
+    local total, found = 0, false
+    for value, token in text:gmatch("(%d+)%s*([^%d%s%p]+)") do
+        local multiplier = coinWordMap[token]
+        if multiplier then
+            total = total + (tonumber(value) or 0) * multiplier
+            found = true
+        end
+    end
+    if found then return total end
+
+    -- Unknown coin wording: the message normally contains a single amount.
+    local fallback = text:match("(%d+)")
+    return fallback and tonumber(fallback) or nil
+end
+
+local function PruneCoinEvents(now)
+    for index = #recentCoinEvents, 1, -1 do
+        if (now - recentCoinEvents[index].time) > COIN_DEDUPE_WINDOW then
+            table.remove(recentCoinEvents, index)
+        end
+    end
+end
+
+local function HasCoinEvent(npcID, amount, source, now)
+    PruneCoinEvents(now)
+    for index = #recentCoinEvents, 1, -1 do
+        local record = recentCoinEvents[index]
+        if record.source ~= source
+            and record.amount == amount
+            and (not npcID or not record.npcID or record.npcID == npcID)
+            and (now - record.time) <= COIN_DEDUPE_WINDOW then
+            table.remove(recentCoinEvents, index)
+            return true
+        end
+    end
+    return false
+end
+
+local function RecordCoinEvent(npcID, amount, source, now)
+    recentCoinEvents[#recentCoinEvents + 1] = {
+        npcID = npcID,
+        amount = amount,
+        source = source,
+        time = now,
+    }
+    PruneCoinEvents(now)
+end
+
+local function AddCoinDrop(npcID, amount)
+    amount = tonumber(amount)
+    if not npcID or not amount or amount <= 0 or not MyKillCountTable then return end
+    npcID = tostring(npcID)
+
+    local entry = MyKillCountTable[npcID]
+    if not entry and lastTargetCache and lastTargetCache.npcID == npcID then
+        entry = {
+            count = 0, looted = 0,
+            name = lastTargetCache.name,
+            race = lastTargetCache.race,
+            xp = 0, avgLootValue = 0,
+            items = {}, itemCounts = {}, coin = 0,
+        }
+        MyKillCountTable[npcID] = entry
+    end
+
+    if entry then
+        entry.coin = (entry.coin or 0) + amount
+        entry.totalVendorValue = (entry.totalVendorValue or 0) + amount
+        if (entry.looted or 0) > 0 then
+            entry.avgLootValue = entry.totalVendorValue / entry.looted
+        end
+    end
+
+    local sessionEntry = KKK.GetSessionMob(npcID, entry and entry.name, entry and entry.race)
+    sessionEntry.vendor = (sessionEntry.vendor or 0) + amount
+    sessionEntry.coin = (sessionEntry.coin or 0) + amount
+
+    KKK.NotifyTracker("loot", npcID)
+end
+
+local function UpdateLootValue(isLootOpened)
     local numItems = GetNumLootItems()
-    local lootData = {} -- lootKey -> { npcID, totalMoney = 0, items = {}, complete = true }
+    local lootData = {} -- lootKey -> { npcID, totalMoney = 0, items = {}, itemQtys = {}, complete = true }
+
+    local function AddLoot(key, npcID)
+        local data = lootData[key]
+        if not data then
+            data = { npcID = npcID, totalMoney = 0, coin = 0, items = {}, itemQtys = {}, complete = true }
+            lootData[key] = data
+        end
+        return data
+    end
+
+    local function QualifyLootKey(npcID, key)
+        if npcID and key and key:sub(1, 7) == "target:" then
+            -- The fallback key is identical for every kill of the same NPC.
+            -- Qualify it by kill generation instead of per-window token, so
+            -- re-opening the same corpse is deduplicated reliably.
+            key = key .. ":gen:" .. tostring(lootGenerations[npcID] or 0)
+        end
+        return npcID, key
+    end
 
     local function GetLootKey(i)
         local guid
@@ -175,56 +398,70 @@ local function UpdateLootValue()
             if ok then guid = g end
         end
         local npcID, key = ResolveLootNpcID(guid)
-        return npcID, key
+        return QualifyLootKey(npcID, key)
     end
 
     if numItems == 0 then
         -- Even if empty, we want to count the loot event for the current target
         if UnitIsDead and UnitIsDead("target") then
-            local npcID, key = ResolveLootNpcID(nil)
+            local npcID, key = QualifyLootKey(ResolveLootNpcID(nil))
             if npcID and key then
-                lootData[key] = { npcID = npcID, totalMoney = 0, items = {}, complete = true }
+                AddLoot(key, npcID)
+                lastLootNpcID = npcID
+                lastLootTime = GetTime()
             end
         end
     else
         for i = 1, numItems do
             local npcID, key = GetLootKey(i)
-            if npcID and key and (not processedGUIDs[key] or not processedItemGUIDs[key]) then
-                if not lootData[key] then
-                    lootData[key] = { npcID = npcID, totalMoney = 0, items = {}, complete = true }
-                end
+            if npcID and key then
+                local data = AddLoot(key, npcID)
+                lastLootNpcID = npcID
+                lastLootTime = GetTime()
 
-                local slotType = GetLootSlotType(i)
-                if slotType == 1 then -- Item
-                    local itemLink = GetLootSlotLink(i)
-                    if itemLink then
-                        local itemName, _, _, _, _, _, _, _, _, _, price = GetItemInfo(itemLink)
+                local lootIcon, lootName, lootQuantity = GetLootSlotInfo(i)
+                local itemLink = GetLootSlotLink and GetLootSlotLink(i) or nil
+                local slotType = GetLootSlotType and GetLootSlotType(i) or nil
+                local isMoney = slotType == 2 or (slotType ~= 3 and not itemLink and (lootQuantity or 0) > 0)
 
-                        if itemName then
-                            local _, _, quantity = GetLootSlotInfo(i)
-                            quantity = quantity or 1
-
-                            local itemID = itemLink:match("item:(%d+)")
-                            table.insert(lootData[key].items, itemID or itemName)
-
-                            if price then
-                                lootData[key].totalMoney = lootData[key].totalMoney + (price * quantity)
-                            else
-                                lootData[key].complete = false
-                            end
+                if isMoney then
+                    local quantity = tonumber(lootQuantity) or 0
+                    local now = GetTime()
+                    if quantity > 0 then
+                        if HasCoinEvent(npcID, quantity, "slot", now) then
+                            -- Already credited from the chat message.
                         else
-                            lootData[key].complete = false
+                            RecordCoinEvent(npcID, quantity, "slot", now)
+                            data.coin = (data.coin or 0) + quantity
+                            data.totalMoney = data.totalMoney + quantity
+                        end
+                    end
+                elseif itemLink then -- Item
+                    local itemName, _, _, _, _, _, _, _, _, _, price = GetItemInfo(itemLink)
+                    if itemName then
+                        local quantity = lootQuantity or 1
+
+                        local itemID = itemLink:match("item:(%d+)")
+                        local itemKey = itemID or itemName
+                        table.insert(data.items, itemKey)
+                        data.itemQtys[itemKey] = (data.itemQtys[itemKey] or 0) + quantity
+
+                        if price then
+                            data.totalMoney = data.totalMoney + (price * quantity)
+                        else
+                            data.complete = false
                         end
                     else
-                        lootData[key].complete = false
+                        data.complete = false
                     end
-                elseif slotType == 2 then -- Money
-                    local _, _, quantity = GetLootSlotInfo(i)
-                    lootData[key].totalMoney = lootData[key].totalMoney + (quantity or 0)
+                else
+                    data.complete = false
                 end
             end
         end
     end
+
+    local sessionChanged = false
 
     for key, data in pairs(lootData) do
         local npcID = data.npcID
@@ -233,7 +470,7 @@ local function UpdateLootValue()
             if not entry then
                 -- Loot proves a kill even when the death event was secret / off-target.
                 if lastTargetCache and lastTargetCache.npcID == npcID then
-                    entry = {count = 0, looted = 0, name = lastTargetCache.name, race = lastTargetCache.race, xp = 0, avgLootValue = 0, items = {}}
+                    entry = {count = 0, looted = 0, name = lastTargetCache.name, race = lastTargetCache.race, xp = 0, avgLootValue = 0, items = {}, itemCounts = {}, coin = 0}
                     MyKillCountTable[npcID] = entry
                 end
             end
@@ -243,6 +480,7 @@ local function UpdateLootValue()
                 if not processedItemGUIDs[key] then
                     processedItemGUIDs[key] = true
                     entry.looted = (entry.looted or 0) + 1
+                    entry.itemCounts = entry.itemCounts or {}
 
                     local uniqueItems = {}
                     for _, itemID in ipairs(data.items) do
@@ -252,51 +490,134 @@ local function UpdateLootValue()
                     for itemID, _ in pairs(uniqueItems) do
                         entry.items[itemID] = (entry.items[itemID] or 0) + 1
                     end
+
+                    for itemID, quantity in pairs(data.itemQtys) do
+                        entry.itemCounts[itemID] = (entry.itemCounts[itemID] or 0) + quantity
+                    end
+
+                    if (data.coin or 0) > 0 then
+                        entry.coin = (entry.coin or 0) + data.coin
+                        entry.totalVendorValue = (entry.totalVendorValue or 0) + data.coin
+                    end
                 end
 
                 if data.complete and not processedGUIDs[key] then
                     processedGUIDs[key] = true
-                    entry.totalVendorValue = (entry.totalVendorValue or 0) + data.totalMoney
+                    local itemValue = data.totalMoney - (data.coin or 0)
+                    entry.totalVendorValue = (entry.totalVendorValue or 0) + itemValue
                     if entry.looted and entry.looted > 0 then
                         entry.avgLootValue = entry.totalVendorValue / entry.looted
                     end
                 end
             end
+
+            -- Session view is updated from a per-corpse snapshot keyed by the
+            -- stable loot key. Re-opening the same corpse therefore produces
+            -- zero deltas, while a new kill gets a new key and counts again.
+            local hasLoot = next(data.itemQtys) ~= nil or data.totalMoney > 0
+            if hasLoot then
+                local previous = lootSnapshots[key]
+                local previousItems = previous and previous.items or {}
+                local previousMoney = previous and previous.money or 0
+                local previousCoin = previous and previous.coin or 0
+                local deltaMoney = data.totalMoney - previousMoney
+                local deltaCoin = (data.coin or 0) - previousCoin
+
+                local name = entry and entry.name
+                local race = entry and entry.race
+                if not name and lastTargetCache and lastTargetCache.npcID == npcID then
+                    name = lastTargetCache.name
+                    race = lastTargetCache.race
+                end
+
+                local sessionEntry = KKK.GetSessionMob(npcID, name, race)
+                if not previous then
+                    sessionEntry.looted = (sessionEntry.looted or 0) + 1
+                end
+
+                if deltaMoney > 0 then
+                    sessionEntry.vendor = (sessionEntry.vendor or 0) + deltaMoney
+                    sessionChanged = true
+                end
+
+                if deltaCoin > 0 then
+                    sessionEntry.coin = (sessionEntry.coin or 0) + deltaCoin
+                    sessionChanged = true
+                end
+
+                for itemID, quantity in pairs(data.itemQtys) do
+                    local delta = quantity - (previousItems[itemID] or 0)
+                    if delta > 0 then
+                        sessionEntry.items[itemID] = (sessionEntry.items[itemID] or 0) + delta
+                        sessionChanged = true
+                    end
+                end
+
+                local snapshotItems = {}
+                for itemID, quantity in pairs(data.itemQtys) do
+                    snapshotItems[itemID] = quantity
+                end
+                lootSnapshots[key] = { money = data.totalMoney, coin = data.coin or 0, items = snapshotItems }
+            end
         end
+    end
+
+    if sessionChanged then
+        KKK.NotifyTracker("loot")
     end
 end
 
--- Dynamic Auction Value Calculation
+-- A single item's auction price, with the same quality sanity filter used by
+-- the original average-value calculation.
+function KKK.GetAuctionPrice(itemID)
+    local numericID = tonumber(itemID)
+    if not numericID then return 0 end
+
+    local _, _, itemQuality = GetItemInfo(numericID)
+    if not itemQuality or itemQuality <= 0 then return 0 end
+
+    local ahPrice = 0
+    if Auctionator and Auctionator.API and Auctionator.API.v1 then
+        local ok, price
+        ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "KwaKillCounter", numericID)
+        if (not ok or not price) then
+            local _, link = GetItemInfo(numericID)
+            if link then
+                ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemLink, "KwaKillCounter", link)
+            end
+        end
+        if ok and price then ahPrice = price end
+    end
+
+    if itemQuality == 1 and ahPrice > 100000 then
+        ahPrice = 0
+    end
+
+    return ahPrice
+end
+
+-- Total auction value for an id -> count item table.
+function KKK.GetItemsAuctionValue(items)
+    local totalValue = 0
+    if not items then return totalValue end
+    for itemID, count in pairs(items) do
+        local price = KKK.GetAuctionPrice(itemID)
+        if price > 0 then
+            totalValue = totalValue + (price * count)
+        end
+    end
+    return totalValue
+end
+
+-- Dynamic Auction Value Calculation (average per loot event, kept for the
+-- existing /kwatopauction command).
 function GetDynamicAuctionValue(npcID)
     local data = MyKillCountTable and MyKillCountTable[npcID]
     if not data or not data.items or not data.looted or data.looted == 0 then return 0 end
 
     local totalValue = 0
     for itemID, dropCount in pairs(data.items) do
-        local _, _, itemQuality = GetItemInfo(itemID)
-        if itemQuality and itemQuality > 0 then
-            local ahPrice = 0
-            if Auctionator and Auctionator.API and Auctionator.API.v1 then
-                local numericID = tonumber(itemID)
-                local ok, price
-                if numericID then
-                    ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "KwaKillCounter", numericID)
-                end
-                if (not ok or not price) and numericID then
-                    local _, link = GetItemInfo(numericID)
-                    if link then
-                        ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemLink, "KwaKillCounter", link)
-                    end
-                end
-                if ok and price then ahPrice = price end
-            end
-
-            if itemQuality == 1 and ahPrice > 100000 then
-                ahPrice = 0
-            end
-
-            totalValue = totalValue + (ahPrice * dropCount)
-        end
+        totalValue = totalValue + (KKK.GetAuctionPrice(itemID) * dropCount)
     end
 
     return totalValue / data.looted
@@ -312,6 +633,10 @@ function KKK.FullReset()
     processedItemGUIDs = {}
     lastTargetCache = nil
     lastPlayerXP = SafeUnitXP()
+    lootSnapshots = {}
+    lootGenerations = {}
+    KKK.ResetSession()
+    KKK.NotifyTracker("reset")
 end
 
 local function MigrateData()
@@ -328,8 +653,15 @@ local function MigrateData()
             end
 
             data.items = data.items or {}
+            if not data.itemCounts then
+                data.itemCounts = {}
+                for itemID, count in pairs(data.items) do
+                    data.itemCounts[itemID] = count
+                end
+            end
             data.avgLootValue = data.avgLootValue or 0
             data.totalVendorValue = data.totalVendorValue or ((data.avgLootValue or 0) * (data.looted or 0))
+            data.coin = data.coin or 0
             data.xp = data.xp or 0
             data.looted = data.looted or 0
         end
@@ -358,6 +690,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" then
         processedGUIDs = {}
         processedItemGUIDs = {}
+        lootSnapshots = {}
+        lastLootNpcID = nil
+        lastLootTime = 0
+        recentCoinEvents = {}
         lastPlayerXP = SafeUnitXP()
         CacheTarget()
 
@@ -435,8 +771,31 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
         if xp then lastPlayerXP = xp end
 
-    elseif event == "LOOT_OPENED" or event == "LOOT_READY" then
-        UpdateLootValue()
+    elseif event == "CHAT_MSG_MONEY" then
+        local message = ...
+        local amount = ParseMoneyMessage(message)
+        if amount and amount > 0 then
+            local now = GetTime()
+            local npcID = lastLootNpcID
+            if not npcID and lastTargetCache and (now - (lastTargetCache.time or 0)) < 60 then
+                npcID = lastTargetCache.npcID
+            end
+            if not npcID then
+                npcID = UnitNpcId("target")
+            end
+
+            if npcID and (now - (lastLootTime or 0)) <= 60 then
+                if not HasCoinEvent(npcID, amount, "chat", now) then
+                    RecordCoinEvent(npcID, amount, "chat", now)
+                    AddCoinDrop(npcID, amount)
+                end
+            end
+        end
+
+    elseif event == "LOOT_OPENED" then
+        UpdateLootValue(true)
+    elseif event == "LOOT_READY" then
+        UpdateLootValue(false)
     end
 end)
 

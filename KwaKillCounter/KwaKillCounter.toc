@@ -1,8 +1,9 @@
 ## Interface: 16001
 ## Title: KwaKillCounter (WoW Forever)
 ## Notes: Tracks NPC kills, loot sources, vendor/auction values for WoW Forever.
-## SavedVariables: MyKillCountTable
+## SavedVariables: MyKillCountTable, KwaTrackerDB
 ## OptionalDeps: Auctionator
 
 KwaCore.lua
 KwaCommands.lua
+KwaTracker.lua

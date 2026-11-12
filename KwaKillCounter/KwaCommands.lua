@@ -188,6 +188,7 @@ function KKK.ShowHelp()
     print("- /kwafind [Item]: Search for drop sources.")
     print("- /kwatopvendor: Top 10 most profitable (Vendor).")
     print("- /kwatopauction: Top 10 most profitable (Auction).")
+    print("- /kwatracker: Open the session loot tracker panel.")
     print("- /kwapurge: Clear loot data (keeps kill counts).")
     print("- /kwafullpurge: Reset ALL kills, loot, XP and values.")
     print("- /kwahelp: Shows this list.")
@@ -202,10 +203,13 @@ function KKK.PurgeData()
             data.items = {}
             data.avgLootValue = 0
             data.totalVendorValue = 0
+            data.coin = 0
             count = count + 1
         end
     end
     print("|cffff0000[KwaKillCounter] Purged loot and value data for " .. count .. " NPCs. (Kill counts preserved)|r")
+    if KKK.ResetSession then KKK.ResetSession() end
+    if KKK.NotifyTracker then KKK.NotifyTracker("reset") end
 end
 
 function KKK.FullPurgeData()
