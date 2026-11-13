@@ -22,6 +22,8 @@ local statGained
 local statLeft
 local statHour
 local statTime
+local statDrop
+local statDrops
 local statSession
 local statLastGain
 local statTotal
@@ -34,6 +36,7 @@ local lastPlayerXP
 local lastPlayerXPMax
 local lastPlayerLevel
 local sessionXp = 0
+local gainCount = 0
 local lastGain = 0
 local sessionStart = GetTime()
 local paused = false
@@ -124,6 +127,7 @@ end
 
 local function ResetTotals()
     sessionXp = 0
+    gainCount = 0
     lastGain = 0
     RefreshAll()
 end
@@ -294,6 +298,10 @@ local function CreatePanel(parent)
     statTime = CreateStatLine(panel, rowY, "RIGHT")
 
     rowY = rowY + ROW_SPACING
+    statDrop = CreateStatLine(panel, rowY, "LEFT")
+    statDrops = CreateStatLine(panel, rowY, "RIGHT")
+
+    rowY = rowY + ROW_SPACING
     statSession = CreateStatLine(panel, rowY, "LEFT")
     statLastGain = CreateStatLine(panel, rowY, "RIGHT")
 
@@ -397,11 +405,17 @@ RefreshPanel = function()
     local now = GetTime()
     local xpPerHour = GetXpPerHour(now)
     local timeToLevel = (remaining and xpPerHour > 0) and (remaining / (xpPerHour / 3600)) or nil
+    local avgDrop = gainCount > 0 and (sessionXp / gainCount) or 0
+    local dropsToLevel = (remaining and remaining > 0 and avgDrop > 0)
+        and math.ceil(remaining / avgDrop) or nil
+    local dropsText = (remaining == 0) and "MAX" or (dropsToLevel and tostring(dropsToLevel) or "--")
 
     statGained:SetText("|cff9d9d9dXP Gained:|r " .. FormatNumber(sessionXp))
     statLeft:SetText("|cff9d9d9dXP Left:|r " .. (remaining and FormatCompact(remaining) or "--"))
     statHour:SetText("|cff9d9d9dXP/Hour:|r " .. FormatNumber(xpPerHour))
     statTime:SetText("|cff9d9d9dTime to level:|r " .. FormatDuration(timeToLevel))
+    statDrop:SetText("|cff9d9d9dXP/Drop:|r " .. FormatNumber(avgDrop))
+    statDrops:SetText("|cff9d9d9dDrops to level:|r " .. dropsText)
     statSession:SetText("|cff9d9d9dSession time:|r " .. FormatDuration(GetActiveElapsed(now)))
     statLastGain:SetText("|cff9d9d9dLast gain:|r " .. (lastGain > 0 and FormatNumber(lastGain) or "--"))
     statTotal:SetText("|cff9d9d9dTotal XP Gained:|r " .. FormatNumber(sessionXp))
@@ -520,6 +534,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 
         if delta > 0 then
             sessionXp = sessionXp + delta
+            gainCount = gainCount + 1
             lastGain = delta
         end
         RefreshAll()
