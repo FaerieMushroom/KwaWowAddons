@@ -5,6 +5,7 @@ Shared window and minimized-bar framework for Kwa addons on **WoW Forever (16001
 ## Usage
 
 - `/kwa` or `/kwalite` opens / closes the window.
+- The title bar shows the active addon's name, with a 16×16 plugin icon on the right for each registered addon.
 - Other addons register a panel and a minimized widget with `KwaLite:RegisterAddon`.
 - Each addon page has a checkbox at the top: when checked, that addon's compact info appears while the window is minimized.
 - If no addon is checked, the minimized bar only shows the `+` button.
@@ -16,6 +17,7 @@ Shared window and minimized-bar framework for Kwa addons on **WoW Forever (16001
 KwaLite:RegisterAddon({
     id = "MyAddon",
     name = "My Addon",
+    icon = "Interface\\Icons\\INV_Misc_Bag_07", -- shown in the right-side plugin bar
     -- Required: build the full panel page. `parent` is the page content area.
     createPanel = function(parent, addon)
         local page = CreateFrame("Frame", nil, parent)

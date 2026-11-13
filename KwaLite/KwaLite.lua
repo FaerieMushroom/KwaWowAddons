@@ -5,8 +5,12 @@ _G.KwaLite = KwaLite
 local FRAME_WIDTH = 292
 local FRAME_HEIGHT = 458
 local TITLE_HEIGHT = 24
-local TAB_HEIGHT = 20
 local OPTION_HEIGHT = 20
+local PLUGIN_BUTTON_SIZE = 20
+local PLUGIN_ICON_SIZE = 16
+local PLUGIN_BUTTON_GAP = 2
+local CONTENT_LEFT = 18
+local CONTENT_RIGHT = 28
 local MINIMIZED_HEIGHT = 28
 local MINIMIZED_MIN_WIDTH = 64
 local MINIMIZED_MAX_WIDTH = 420
@@ -16,7 +20,7 @@ local titleBar
 local titleText
 local minimizeButton
 local expandButton
-local tabBar
+local pluginBar
 local optionRow
 local minimizeCheckbox
 local minimizeCheckLabel
@@ -26,7 +30,7 @@ local contextOverlay
 
 local addons = {}
 local addonsByID = {}
-local tabButtons = {}
+local pluginButtons = {}
 local activeID
 local minimized = false
 local initialized = false
@@ -186,31 +190,34 @@ local function UpdateOptionRow()
     local addon = addonsByID[activeID]
     if not addon then
         optionRow:Hide()
+        if titleText then titleText:SetText("|cffffd100Kwa Lite|r") end
         return
     end
 
+    if titleText then
+        titleText:SetText("|cffffd100" .. addon.name .. "|r")
+    end
     optionRow:Show()
     minimizeCheckbox:SetChecked(IsAddonChecked(addon))
     minimizeCheckLabel:SetText("Show " .. addon.name .. " when minimized")
 end
 
-local function UpdateTabs()
+local function UpdatePluginButtons()
     for index, addon in ipairs(addons) do
-        local button = tabButtons[index]
+        local button = pluginButtons[index]
         if not button then
-            button = CreateFrame("Button", nil, tabBar)
-            button:SetHeight(TAB_HEIGHT)
+            button = CreateFrame("Button", nil, pluginBar)
+            button:SetSize(PLUGIN_BUTTON_SIZE, PLUGIN_BUTTON_SIZE)
 
             local background = button:CreateTexture(nil, "BACKGROUND")
             background:SetAllPoints()
-            background:SetColorTexture(1, 1, 1, 0.08)
+            background:SetColorTexture(1, 1, 1, 0.14)
             button.background = background
 
-            local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            label:SetPoint("LEFT", button, "LEFT", 7, 0)
-            label:SetPoint("RIGHT", button, "RIGHT", -7, 0)
-            label:SetJustifyH("CENTER")
-            button.label = label
+            local icon = button:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(PLUGIN_ICON_SIZE, PLUGIN_ICON_SIZE)
+            icon:SetPoint("CENTER", button, "CENTER", 0, 0)
+            button.icon = icon
 
             button:SetScript("OnClick", function(self)
                 if self.addonID then
@@ -219,6 +226,9 @@ local function UpdateTabs()
             end)
             button:SetScript("OnEnter", function(self)
                 self.background:Show()
+                GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+                GameTooltip:AddLine(self.addonName or "Addon", 1, 0.82, 0)
+                GameTooltip:Show()
             end)
             button:SetScript("OnLeave", function(self)
                 if self.addonID == activeID then
@@ -226,37 +236,27 @@ local function UpdateTabs()
                 else
                     self.background:Hide()
                 end
+                GameTooltip:Hide()
             end)
 
-            tabButtons[index] = button
+            pluginButtons[index] = button
         end
 
         button.addonID = addon.id
-        button.label:SetText(addon.name)
+        button.addonName = addon.name
+        button.icon:SetTexture(addon.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
         button:Show()
-
-        local textWidth = 0
-        if button.label.GetStringWidth then
-            local ok, width = pcall(button.label.GetStringWidth, button.label)
-            if ok and type(width) == "number" then textWidth = width end
-        end
-        if textWidth <= 0 then
-            textWidth = #addon.name * 6
-        end
-        button:SetWidth(math.ceil(textWidth + 14))
         button.background:SetShown(addon.id == activeID)
     end
 
-    for index = #addons + 1, #tabButtons do
-        tabButtons[index]:Hide()
+    for index = #addons + 1, #pluginButtons do
+        pluginButtons[index]:Hide()
     end
 
-    local x = 0
     for index = 1, #addons do
-        local button = tabButtons[index]
+        local button = pluginButtons[index]
         button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", tabBar, "TOPLEFT", x, 0)
-        x = x + button:GetWidth() + 2
+        button:SetPoint("TOP", pluginBar, "TOP", 0, -((index - 1) * (PLUGIN_BUTTON_SIZE + PLUGIN_BUTTON_GAP)))
     end
 end
 
@@ -264,27 +264,26 @@ local function LayoutExpanded()
     if not frame then return end
 
     local y = TITLE_HEIGHT
-    if #addons > 1 then
-        tabBar:ClearAllPoints()
-        tabBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -TITLE_HEIGHT)
-        tabBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -TITLE_HEIGHT)
-        tabBar:SetHeight(TAB_HEIGHT)
-        tabBar:Show()
-        y = y + TAB_HEIGHT
+    if #addons > 0 then
+        pluginBar:ClearAllPoints()
+        pluginBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -(TITLE_HEIGHT + 4))
+        pluginBar:SetWidth(PLUGIN_BUTTON_SIZE)
+        pluginBar:SetHeight((#addons * (PLUGIN_BUTTON_SIZE + PLUGIN_BUTTON_GAP)) - PLUGIN_BUTTON_GAP)
+        pluginBar:Show()
     else
-        tabBar:Hide()
+        pluginBar:Hide()
     end
 
     optionRow:ClearAllPoints()
-    optionRow:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -y)
-    optionRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -y)
+    optionRow:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_LEFT, -y)
+    optionRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -CONTENT_RIGHT, -y)
     optionRow:SetHeight(OPTION_HEIGHT)
     optionRow:Show()
     y = y + OPTION_HEIGHT
 
     pageHost:ClearAllPoints()
-    pageHost:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -y)
-    pageHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+    pageHost:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_LEFT, -y)
+    pageHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -CONTENT_RIGHT, 4)
     pageHost:Show()
 end
 
@@ -296,7 +295,7 @@ local function ApplyMinimizedState()
         if titleText then titleText:Hide() end
         if minimizeButton then minimizeButton:Hide() end
         if expandButton then expandButton:Show() end
-        if tabBar then tabBar:Hide() end
+        if pluginBar then pluginBar:Hide() end
         if optionRow then optionRow:Hide() end
         if pageHost then pageHost:Hide() end
 
@@ -314,7 +313,7 @@ local function ApplyMinimizedState()
         end
         LayoutExpanded()
         UpdateOptionRow()
-        UpdateTabs()
+        UpdatePluginButtons()
         KwaLite:RefreshCurrent()
     end
 end
@@ -388,7 +387,7 @@ local function CreateUI()
     titleBackground:SetColorTexture(0.10, 0.10, 0.13, 0.95)
 
     titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
+    titleText:SetPoint("LEFT", titleBar, "LEFT", CONTENT_LEFT, 0)
     titleText:SetText("|cffffd100Kwa Lite|r")
 
     minimizeButton = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
@@ -410,8 +409,8 @@ local function CreateUI()
         KwaLite:SetMinimized(false)
     end)
 
-    tabBar = CreateFrame("Frame", nil, frame)
-    tabBar:Hide()
+    pluginBar = CreateFrame("Frame", nil, frame)
+    pluginBar:Hide()
 
     optionRow = CreateFrame("Frame", nil, frame)
     optionRow:SetHeight(OPTION_HEIGHT)
@@ -504,6 +503,7 @@ function KwaLite:RegisterAddon(config)
     local addon = {
         id = config.id,
         name = config.name or config.id,
+        icon = config.icon,
         createPanel = config.createPanel,
         createMinimized = config.createMinimized,
         refresh = config.refresh,
@@ -524,7 +524,7 @@ function KwaLite:RegisterAddon(config)
     if not minimized then
         LayoutExpanded()
     end
-    UpdateTabs()
+    UpdatePluginButtons()
     UpdateOptionRow()
 
     if addon.id == activeID then
@@ -546,7 +546,7 @@ function KwaLite:SelectAddon(id)
         end
     end
 
-    UpdateTabs()
+    UpdatePluginButtons()
     UpdateOptionRow()
     self:RefreshCurrent()
 end
