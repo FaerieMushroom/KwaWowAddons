@@ -11,12 +11,13 @@ local PLUGIN_ICON_SIZE = 16
 local PLUGIN_BUTTON_GAP = 2
 local CONTENT_LEFT = 18
 local CONTENT_RIGHT = 28
-local MINIMIZED_HEIGHT = 34
+local MINIMIZED_HEIGHT = 24
 local MINIMIZED_ICON_SIZE = 16
-local MINIMIZED_ICON_GAP = 4
-local MINIMIZED_WIDGET_GAP = 10
-local MINIMIZED_MIN_WIDTH = 64
-local MINIMIZED_MAX_WIDTH = 420
+local MINIMIZED_ICON_GAP = 3
+local MINIMIZED_WIDGET_GAP = 6
+local MINIMIZED_LEFT_PADDING = 4
+local MINIMIZED_RIGHT_PADDING = 6
+local MINIMIZED_MIN_WIDTH = 30
 
 local frame
 local titleBar
@@ -176,7 +177,7 @@ end
 local function LayoutMinimized()
     if not frame then return end
 
-    local x = 8
+    local x = MINIMIZED_LEFT_PADDING
     for _, addon in ipairs(addons) do
         local widget = addon.minimizedWidget
         local icon = addon.minimizedIcon
@@ -190,7 +191,7 @@ local function LayoutMinimized()
 
                 widget:ClearAllPoints()
                 widget:SetPoint("LEFT", titleBar, "LEFT", x, 0)
-                widget:SetHeight(MINIMIZED_HEIGHT - 8)
+                widget:SetHeight(MINIMIZED_HEIGHT - 4)
                 widget:Show()
                 local width = widget:GetWidth() or 0
                 if width <= 0 then width = 72 end
@@ -202,9 +203,10 @@ local function LayoutMinimized()
         end
     end
 
-    local width = math.ceil(x + 4 + 20 + 4)
+    local width = math.ceil(x + 20 + MINIMIZED_RIGHT_PADDING)
     if width < MINIMIZED_MIN_WIDTH then width = MINIMIZED_MIN_WIDTH end
-    if width > MINIMIZED_MAX_WIDTH then width = MINIMIZED_MAX_WIDTH end
+    local maxWidth = (UIParent and UIParent:GetWidth() or 1920) - 20
+    if width > maxWidth then width = maxWidth end
     frame:SetSize(width, MINIMIZED_HEIGHT)
 end
 

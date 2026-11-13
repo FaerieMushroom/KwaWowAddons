@@ -842,18 +842,28 @@ local function RefreshMinimized()
     end
     miniLabel:SetText(text)
 
+    local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     local textWidth = 0
     if miniLabel.GetStringWidth then
+        -- Measure without color codes and with plenty of room so the width
+        -- is not clamped by a previous label width.
+        miniLabel:SetWidth(2000)
+        miniLabel:SetText(plain)
         local ok, width = pcall(miniLabel.GetStringWidth, miniLabel)
         if ok and type(width) == "number" then
             textWidth = width
         end
+        miniLabel:SetText(text)
     end
     if textWidth <= 0 then
-        local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-        textWidth = #plain * 6
+        local visible = plain:gsub("|T.-|t", "")
+        textWidth = #visible * 6
     end
-    miniFrame:SetWidth(math.ceil(math.max(textWidth + 2, 60)))
+    local width = math.ceil(math.max(textWidth + 12, 60))
+    miniFrame:SetWidth(width)
+    if miniLabel.SetWidth then
+        miniLabel:SetWidth(width - 2)
+    end
 end
 
 Refresh = function()

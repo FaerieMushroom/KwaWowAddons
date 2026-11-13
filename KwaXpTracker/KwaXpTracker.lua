@@ -9,6 +9,7 @@ end
 
 local ROW_SPACING = 20
 local BAR_HEIGHT = 24
+local REFRESH_INTERVAL = 30
 
 local panel
 local miniFrame
@@ -35,6 +36,9 @@ local lastPlayerLevel
 local sessionXp = 0
 local lastGain = 0
 local sessionStart = GetTime()
+local paused = false
+local pausedAt = 0
+local pausedTotal = 0
 
 local RefreshPanel
 local RefreshMinimized
@@ -109,6 +113,15 @@ local function HideContextMenu()
     if contextOverlay then contextOverlay:Hide() end
 end
 
+local function GetActiveElapsed(now)
+    local elapsed = now - sessionStart - pausedTotal
+    if paused then
+        elapsed = elapsed - (now - pausedAt)
+    end
+    if elapsed < 1 then elapsed = 1 end
+    return elapsed
+end
+
 local function ResetTotals()
     sessionXp = 0
     lastGain = 0
@@ -117,6 +130,10 @@ end
 
 local function ResetTimer()
     sessionStart = GetTime()
+    pausedTotal = 0
+    if paused then
+        pausedAt = sessionStart
+    end
     RefreshAll()
 end
 
@@ -124,6 +141,22 @@ local function ResetAll()
     ResetTotals()
     ResetTimer()
     lastPlayerXP, lastPlayerXPMax, lastPlayerLevel = ReadPlayerXP()
+    RefreshAll()
+end
+
+local function TogglePause()
+    local now = GetTime()
+    if paused then
+        paused = false
+        pausedTotal = pausedTotal + (now - pausedAt)
+        pausedAt = 0
+        -- Ignore any XP gained while paused.
+        lastPlayerXP, lastPlayerXPMax, lastPlayerLevel = ReadPlayerXP()
+    else
+        paused = true
+        pausedAt = now
+        lastPlayerXP, lastPlayerXPMax, lastPlayerLevel = ReadPlayerXP()
+    end
     RefreshAll()
 end
 
@@ -158,7 +191,7 @@ local function CreateContextMenu()
     contextMenu:Hide()
 
     contextMenu.buttons = {}
-    for index = 1, 3 do
+    for index = 1, 4 do
         local button = CreateFrame("Button", nil, contextMenu)
         button:SetHeight(20)
         button:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
@@ -196,6 +229,7 @@ end
 local function ShowResetMenu()
     local menu = CreateContextMenu()
     local options = {
+        { label = paused and "Resume tracking" or "Pause tracking", action = TogglePause },
         { label = "Reset session XP", action = ResetTotals },
         { label = "Reset XP/hour timer", action = ResetTimer },
         { label = "Reset all", action = ResetAll },
@@ -325,8 +359,7 @@ end
 
 local function GetXpPerHour(now)
     if sessionXp <= 0 then return 0 end
-    local elapsed = math.max(1, now - sessionStart)
-    return sessionXp / elapsed * 3600
+    return sessionXp / GetActiveElapsed(now) * 3600
 end
 
 RefreshPanel = function()
@@ -369,34 +402,52 @@ RefreshPanel = function()
     statLeft:SetText("|cff9d9d9dXP Left:|r " .. (remaining and FormatCompact(remaining) or "--"))
     statHour:SetText("|cff9d9d9dXP/Hour:|r " .. FormatNumber(xpPerHour))
     statTime:SetText("|cff9d9d9dTime to level:|r " .. FormatDuration(timeToLevel))
-    statSession:SetText("|cff9d9d9dSession time:|r " .. FormatDuration(now - sessionStart))
+    statSession:SetText("|cff9d9d9dSession time:|r " .. FormatDuration(GetActiveElapsed(now)))
     statLastGain:SetText("|cff9d9d9dLast gain:|r " .. (lastGain > 0 and FormatNumber(lastGain) or "--"))
     statTotal:SetText("|cff9d9d9dTotal XP Gained:|r " .. FormatNumber(sessionXp))
-    statScope:SetText("|cff9d9d9dThis session|r")
+    statScope:SetText(paused and "|cff9d9d9dThis session (paused)|r" or "|cff9d9d9dThis session|r")
 end
 
 RefreshMinimized = function()
     if not miniFrame or not miniLabel then return end
 
+    local xp, xpMax = ReadPlayerXP()
+    local remaining
+    if xp and xpMax and xpMax > 0 then
+        remaining = math.max(0, xpMax - xp)
+    elseif xpMax and xpMax <= 0 then
+        remaining = 0
+    end
+
     local xpPerHour = GetXpPerHour(GetTime())
-    local text = "|cff9d9d9dGained:|r " .. FormatNumber(sessionXp)
-        .. "\n|cff9d9d9dPer hour:|r " .. FormatNumber(xpPerHour)
+    local timeToLevel = (remaining and remaining > 0 and xpPerHour > 0)
+        and (remaining / (xpPerHour / 3600)) or nil
+    local toLevelText = (remaining == 0) and "MAX" or FormatDuration(timeToLevel)
+
+    local text = "|cff9d9d9dXP:|r " .. FormatNumber(sessionXp)
+        .. "   |cff9d9d9dTo Level:|r " .. toLevelText
     miniLabel:SetText(text)
 
+    local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
     local textWidth = 0
     if miniLabel.GetStringWidth then
+        -- Measure the plain text with plenty of room so the width is not
+        -- clamped by a previous (possibly too small) label width.
+        miniLabel:SetWidth(2000)
+        miniLabel:SetText(plain)
         local ok, width = pcall(miniLabel.GetStringWidth, miniLabel)
         if ok and type(width) == "number" then
             textWidth = width
         end
+        miniLabel:SetText(text)
     end
     if textWidth <= 0 then
-        local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-        for line in (plain .. "\n"):gmatch("(.-)\n") do
-            if #line * 6 > textWidth then textWidth = #line * 6 end
-        end
+        textWidth = #plain * 6
     end
-    miniFrame:SetWidth(math.ceil(math.max(textWidth + 2, 60)))
+
+    local width = math.ceil(math.max(textWidth + 12, 60))
+    miniFrame:SetWidth(width)
+    miniLabel:SetWidth(width - 2)
 end
 
 RefreshAll = function()
@@ -440,6 +491,14 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local xp, xpMax, level = ReadPlayerXP()
         if not xp or not xpMax then return end
 
+        if paused then
+            lastPlayerXP = xp
+            lastPlayerXPMax = xpMax
+            lastPlayerLevel = level
+            RefreshAll()
+            return
+        end
+
         if lastPlayerXP == nil or lastPlayerLevel == nil then
             lastPlayerXP = xp
             lastPlayerXPMax = xpMax
@@ -463,6 +522,16 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             sessionXp = sessionXp + delta
             lastGain = delta
         end
+        RefreshAll()
+    end
+end)
+
+-- Keep XP/hour, session time, and time-to-level fresh even when no XP events fire.
+local refreshElapsed = 0
+eventFrame:SetScript("OnUpdate", function(_, elapsed)
+    refreshElapsed = refreshElapsed + (elapsed or 0)
+    if refreshElapsed >= REFRESH_INTERVAL then
+        refreshElapsed = 0
         RefreshAll()
     end
 end)
