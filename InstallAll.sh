@@ -9,6 +9,7 @@ ADDONS=(
     "KwaLite"
     "KwaUtils"
     "KwaKillCounter"
+    "KwaXpTracker"
 )
 
 for addon in "${ADDONS[@]}"; do
