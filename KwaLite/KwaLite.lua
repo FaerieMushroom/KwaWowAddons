@@ -11,7 +11,10 @@ local PLUGIN_ICON_SIZE = 16
 local PLUGIN_BUTTON_GAP = 2
 local CONTENT_LEFT = 18
 local CONTENT_RIGHT = 28
-local MINIMIZED_HEIGHT = 28
+local MINIMIZED_HEIGHT = 34
+local MINIMIZED_ICON_SIZE = 16
+local MINIMIZED_ICON_GAP = 4
+local MINIMIZED_WIDGET_GAP = 10
 local MINIMIZED_MIN_WIDTH = 64
 local MINIMIZED_MAX_WIDTH = 420
 
@@ -157,23 +160,44 @@ local function RefreshMinimizedWidgets()
     end
 end
 
+local function GetMinimizedIcon(addon)
+    local icon = addon.minimizedIcon
+    if not icon and titleBar then
+        icon = titleBar:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(MINIMIZED_ICON_SIZE, MINIMIZED_ICON_SIZE)
+        addon.minimizedIcon = icon
+    end
+    if icon then
+        icon:SetTexture(addon.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    end
+    return icon
+end
+
 local function LayoutMinimized()
     if not frame then return end
 
     local x = 8
     for _, addon in ipairs(addons) do
         local widget = addon.minimizedWidget
+        local icon = addon.minimizedIcon
         if widget then
             if IsAddonChecked(addon) then
+                icon = GetMinimizedIcon(addon)
+                icon:ClearAllPoints()
+                icon:SetPoint("LEFT", titleBar, "LEFT", x, 0)
+                icon:Show()
+                x = x + MINIMIZED_ICON_SIZE + MINIMIZED_ICON_GAP
+
                 widget:ClearAllPoints()
                 widget:SetPoint("LEFT", titleBar, "LEFT", x, 0)
                 widget:SetHeight(MINIMIZED_HEIGHT - 8)
                 widget:Show()
                 local width = widget:GetWidth() or 0
                 if width <= 0 then width = 72 end
-                x = x + width + 8
+                x = x + width + MINIMIZED_WIDGET_GAP
             else
                 widget:Hide()
+                if icon then icon:Hide() end
             end
         end
     end
@@ -292,6 +316,7 @@ local function ApplyMinimizedState()
 
     if minimized then
         frame:SetHeight(MINIMIZED_HEIGHT)
+        if titleBar then titleBar:SetHeight(MINIMIZED_HEIGHT - 2) end
         if titleText then titleText:Hide() end
         if minimizeButton then minimizeButton:Hide() end
         if expandButton then expandButton:Show() end
@@ -303,12 +328,16 @@ local function ApplyMinimizedState()
         LayoutMinimized()
     else
         frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
+        if titleBar then titleBar:SetHeight(TITLE_HEIGHT) end
         if titleText then titleText:Show() end
         if minimizeButton then minimizeButton:Show() end
         if expandButton then expandButton:Hide() end
         for _, addon in ipairs(addons) do
             if addon.minimizedWidget then
                 addon.minimizedWidget:Hide()
+            end
+            if addon.minimizedIcon then
+                addon.minimizedIcon:Hide()
             end
         end
         LayoutExpanded()
@@ -401,7 +430,7 @@ local function CreateUI()
 
     expandButton = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
     expandButton:SetSize(20, 20)
-    expandButton:SetPoint("TOPRIGHT", titleBar, "TOPRIGHT", -4, -2)
+    expandButton:SetPoint("RIGHT", titleBar, "RIGHT", -4, 0)
     expandButton:SetFrameLevel(titleBar:GetFrameLevel() + 5)
     expandButton:SetText("+")
     expandButton:Hide()
@@ -597,3 +626,15 @@ SLASH_KWA2 = "/kwalite"
 SlashCmdList["KWA"] = function()
     KwaLite:Toggle()
 end
+
+-- Open the window automatically once per login/reload. PLAYER_ENTERING_WORLD
+-- also fires when zoning, so guard it to avoid reopening a closed window.
+local startupShown = false
+local startupFrame = CreateFrame("Frame")
+startupFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+startupFrame:SetScript("OnEvent", function()
+    if startupShown then return end
+    startupShown = true
+    KwaLite:Show()
+    KwaLite:SetMinimized(true)
+end)

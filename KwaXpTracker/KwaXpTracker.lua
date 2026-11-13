@@ -7,23 +7,24 @@ local canAccess = function(v)
     return (canaccessvalue and canaccessvalue(v)) or true
 end
 
-local XP_MATCH_WINDOW = 3
-local XP_FLUSH_DELAY = 0.3
-local XP_EVENT_RETENTION = 10
-local ROW_SPACING = 18
+local ROW_SPACING = 20
+local BAR_HEIGHT = 24
 
 local panel
 local miniFrame
 local miniLabel
 local bar
-local barText
+local barLevelLeft
+local barPercent
+local barLevelRight
+local statGained
+local statLeft
+local statHour
 local statTime
-local statXpKill
-local statKills
-local statXpHour
-local statKillTotal
-local statQuestTotal
-local statLastKill
+local statSession
+local statLastGain
+local statTotal
+local statScope
 local hintLabel
 local contextMenu
 local contextOverlay
@@ -32,29 +33,12 @@ local lastPlayerXP
 local lastPlayerXPMax
 local lastPlayerLevel
 local sessionXp = 0
-local sessionKillXp = 0
-local sessionQuestXp = 0
+local lastGain = 0
 local sessionStart = GetTime()
-
-local pendingXp = {}
-local recentChatXp = {}
-local flushScheduled = false
 
 local RefreshPanel
 local RefreshMinimized
 local RefreshAll
-
-local function EnsureDB()
-    if type(KwaXpTrackerDB) ~= "table" then
-        KwaXpTrackerDB = {}
-    end
-    local db = KwaXpTrackerDB
-    db.totalKillXp = db.totalKillXp or 0
-    db.totalQuestXp = db.totalQuestXp or 0
-    db.killCount = db.killCount or 0
-    db.lastKillXp = db.lastKillXp or 0
-    return db
-end
 
 local function SafeUnitXP()
     if not UnitXP then return nil end
@@ -91,6 +75,17 @@ local function FormatNumber(value)
     return text
 end
 
+local function FormatCompact(value)
+    local number = tonumber(value) or 0
+    if math.abs(number) >= 1000000 then
+        return string.format("%.1fM", number / 1000000)
+    end
+    if math.abs(number) >= 10000 then
+        return string.format("%.1fK", number / 1000)
+    end
+    return FormatNumber(number)
+end
+
 local function FormatDuration(seconds)
     seconds = tonumber(seconds)
     if not seconds or seconds <= 0 or seconds == math.huge then
@@ -109,263 +104,18 @@ local function FormatDuration(seconds)
     return string.format("%ds", secs)
 end
 
-local function MakeXpPattern(template)
-    if not template or template == "" then return nil end
-    local ok, pattern = pcall(function()
-        return template:gsub("%%s", "(.-)"):gsub("%%d", "(%%d+)")
-    end)
-    if not ok or not pattern or pattern == "" then return nil end
-    return pattern
-end
-
-local killPattern = MakeXpPattern(_G.COMBATLOG_XPGAIN_FIRSTPERSON or "%s dies, you gain %d experience.")
-local killUnnamedPattern = MakeXpPattern(_G.COMBATLOG_XPGAIN_FIRSTPERSON_UNNAMED or "You gain %d experience.")
-local questPattern = MakeXpPattern(_G.COMBATLOG_XPGAIN_QUEST or "You gain %d experience from quest: %s.")
-
-local function ParseXpMessage(message)
-    if type(message) ~= "string" or message == "" then return nil end
-    if isSecret(message) or not canAccess(message) then return nil end
-
-    if questPattern then
-        local xp, questName = message:match(questPattern)
-        if xp then
-            return tonumber(xp), "quest", questName
-        end
-    end
-
-    if killPattern then
-        local mobName, xp = message:match(killPattern)
-        if xp then
-            return tonumber(xp), "kill", mobName
-        end
-    end
-
-    if killUnnamedPattern then
-        local xp = message:match(killUnnamedPattern)
-        if xp then
-            return tonumber(xp), "kill", nil
-        end
-    end
-
-    return nil
-end
-
-local function PruneXpEvents(now)
-    for index = #pendingXp, 1, -1 do
-        if (now - pendingXp[index].time) > XP_EVENT_RETENTION then
-            table.remove(pendingXp, index)
-        end
-    end
-    for index = #recentChatXp, 1, -1 do
-        if (now - recentChatXp[index].time) > XP_EVENT_RETENTION then
-            table.remove(recentChatXp, index)
-        end
-    end
-end
-
-local function ApplyXpGain(amount, kind, name, gainTime)
-    amount = tonumber(amount) or 0
-    if amount <= 0 then return end
-
-    local db = EnsureDB()
-    if sessionXp <= 0 then
-        sessionStart = gainTime or GetTime()
-    end
-
-    sessionXp = sessionXp + amount
-    if kind == "quest" then
-        db.totalQuestXp = db.totalQuestXp + amount
-        sessionQuestXp = sessionQuestXp + amount
-    else
-        db.totalKillXp = db.totalKillXp + amount
-        sessionKillXp = sessionKillXp + amount
-        db.killCount = db.killCount + 1
-        db.lastKillXp = amount
-        if name and name ~= "" then
-            db.lastKillName = name
-        end
-    end
-end
-
-local function ReclassifyXp(amount, fromKind, toKind, name)
-    amount = tonumber(amount) or 0
-    if amount <= 0 or fromKind == toKind then return false end
-
-    local db = EnsureDB()
-    if fromKind == "quest" then
-        db.totalQuestXp = math.max(0, db.totalQuestXp - amount)
-        sessionQuestXp = math.max(0, sessionQuestXp - amount)
-    else
-        db.totalKillXp = math.max(0, db.totalKillXp - amount)
-        sessionKillXp = math.max(0, sessionKillXp - amount)
-        db.killCount = math.max(0, db.killCount - 1)
-    end
-
-    if toKind == "quest" then
-        db.totalQuestXp = db.totalQuestXp + amount
-        sessionQuestXp = sessionQuestXp + amount
-    else
-        db.totalKillXp = db.totalKillXp + amount
-        sessionKillXp = sessionKillXp + amount
-        db.killCount = db.killCount + 1
-        db.lastKillXp = amount
-        if name and name ~= "" then
-            db.lastKillName = name
-        end
-    end
-    return true
-end
-
-local function ScheduleXpFlush()
-    if flushScheduled then return end
-    flushScheduled = true
-
-    if C_Timer and C_Timer.After then
-        C_Timer.After(XP_FLUSH_DELAY, function()
-            flushScheduled = false
-            local now = GetTime()
-            local changed = false
-
-            for _, pending in ipairs(pendingXp) do
-                if not pending.finalized and not pending.kind then
-                    for index = #recentChatXp, 1, -1 do
-                        local chat = recentChatXp[index]
-                        if not chat.used and chat.amount == pending.amount
-                            and (now - chat.time) <= XP_MATCH_WINDOW then
-                            pending.kind = chat.kind
-                            pending.name = chat.name
-                            chat.used = true
-                            break
-                        end
-                    end
-                end
-            end
-
-            for _, pending in ipairs(pendingXp) do
-                if not pending.finalized then
-                    pending.finalized = true
-                    ApplyXpGain(pending.amount, pending.kind or "kill", pending.name, pending.time)
-                    changed = true
-                end
-            end
-
-            for _, chat in ipairs(recentChatXp) do
-                if not chat.used and not chat.counted then
-                    chat.used = true
-                    chat.counted = true
-                    ApplyXpGain(chat.amount, chat.kind, chat.name, chat.time)
-                    changed = true
-                end
-            end
-
-            PruneXpEvents(now)
-            if changed then
-                RefreshAll()
-            end
-        end)
-    else
-        flushScheduled = false
-    end
-end
-
-local function EnqueueXpDelta(delta, now)
-    delta = tonumber(delta) or 0
-    if delta <= 0 then return end
-
-    PruneXpEvents(now)
-    for index = #recentChatXp, 1, -1 do
-        local chat = recentChatXp[index]
-        if chat.amount == delta and (now - chat.time) <= XP_MATCH_WINDOW then
-            if chat.counted then
-                return
-            end
-            if not chat.used then
-                chat.used = true
-                pendingXp[#pendingXp + 1] = {
-                    amount = delta,
-                    time = now,
-                    kind = chat.kind,
-                    name = chat.name,
-                }
-                ScheduleXpFlush()
-                return
-            end
-        end
-    end
-
-    pendingXp[#pendingXp + 1] = {
-        amount = delta,
-        time = now,
-    }
-    ScheduleXpFlush()
-end
-
-local function OnChatXp(amount, kind, name)
-    amount = tonumber(amount) or 0
-    if amount <= 0 then return end
-
-    local now = GetTime()
-    PruneXpEvents(now)
-
-    local matched = false
-    local matchedFinalized = false
-    local finalizedKind
-    for index = #pendingXp, 1, -1 do
-        local pending = pendingXp[index]
-        if pending.amount == amount and (now - pending.time) <= XP_MATCH_WINDOW then
-            if pending.finalized then
-                matchedFinalized = true
-                finalizedKind = pending.kind
-            elseif not pending.kind then
-                pending.kind = kind
-                pending.name = name
-            end
-            matched = true
-            break
-        end
-    end
-
-    if matchedFinalized and finalizedKind and finalizedKind ~= kind then
-        if ReclassifyXp(amount, finalizedKind, kind, name) then
-            RefreshAll()
-        end
-    end
-
-    recentChatXp[#recentChatXp + 1] = {
-        amount = amount,
-        kind = kind,
-        name = name,
-        time = now,
-        used = matched,
-        counted = matchedFinalized,
-    }
-
-    if not matched then
-        ScheduleXpFlush()
-    end
-end
-
 local function HideContextMenu()
     if contextMenu then contextMenu:Hide() end
     if contextOverlay then contextOverlay:Hide() end
 end
 
 local function ResetTotals()
-    local db = EnsureDB()
-    db.totalKillXp = 0
-    db.totalQuestXp = 0
-    db.killCount = 0
-    db.lastKillXp = 0
-    db.lastKillName = nil
-    pendingXp = {}
-    recentChatXp = {}
+    sessionXp = 0
+    lastGain = 0
     RefreshAll()
 end
 
 local function ResetTimer()
-    sessionXp = 0
-    sessionKillXp = 0
-    sessionQuestXp = 0
     sessionStart = GetTime()
     RefreshAll()
 end
@@ -373,9 +123,7 @@ end
 local function ResetAll()
     ResetTotals()
     ResetTimer()
-    lastPlayerXP = SafeUnitXP()
-    lastPlayerXPMax = SafeUnitXPMax()
-    lastPlayerLevel = SafeUnitLevel()
+    lastPlayerXP, lastPlayerXPMax, lastPlayerLevel = ReadPlayerXP()
     RefreshAll()
 end
 
@@ -448,7 +196,7 @@ end
 local function ShowResetMenu()
     local menu = CreateContextMenu()
     local options = {
-        { label = "Reset XP totals", action = ResetTotals },
+        { label = "Reset session XP", action = ResetTotals },
         { label = "Reset XP/hour timer", action = ResetTimer },
         { label = "Reset all", action = ResetAll },
     }
@@ -480,14 +228,15 @@ local function ShowResetMenu()
     menu:Show()
 end
 
-local function CreateStatRow(parent, y, labelText)
-    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
-    label:SetText(labelText)
-
+local function CreateStatLine(parent, y, side)
     local value = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    value:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -y)
-    value:SetJustifyH("RIGHT")
+    if side == "RIGHT" then
+        value:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -y)
+        value:SetJustifyH("RIGHT")
+    else
+        value:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
+        value:SetJustifyH("LEFT")
+    end
     return value
 end
 
@@ -502,43 +251,49 @@ local function CreatePanel(parent)
         end
     end)
 
+    local rowY = 2
+    statGained = CreateStatLine(panel, rowY, "LEFT")
+    statLeft = CreateStatLine(panel, rowY, "RIGHT")
+
+    rowY = rowY + ROW_SPACING
+    statHour = CreateStatLine(panel, rowY, "LEFT")
+    statTime = CreateStatLine(panel, rowY, "RIGHT")
+
+    rowY = rowY + ROW_SPACING
+    statSession = CreateStatLine(panel, rowY, "LEFT")
+    statLastGain = CreateStatLine(panel, rowY, "RIGHT")
+
+    rowY = rowY + ROW_SPACING + 6
     bar = CreateFrame("StatusBar", nil, panel)
-    bar:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    bar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    bar:SetHeight(20)
-    bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    bar:SetStatusBarColor(0.25, 0.55, 0.95)
+    bar:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -rowY)
+    bar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -rowY)
+    bar:SetHeight(BAR_HEIGHT)
+    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    bar:SetStatusBarColor(0.66, 0.26, 0.08, 1)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
 
     local barBackground = bar:CreateTexture(nil, "BACKGROUND")
     barBackground:SetAllPoints()
-    barBackground:SetColorTexture(0, 0, 0, 0.6)
+    barBackground:SetColorTexture(0.08, 0.08, 0.08, 0.95)
 
-    barText = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    barText:SetPoint("CENTER", bar, "CENTER", 0, 0)
+    barLevelLeft = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    barLevelLeft:SetPoint("LEFT", bar, "LEFT", 6, 0)
+    barLevelLeft:SetJustifyH("LEFT")
 
-    local rowY = 30
-    statTime = CreateStatRow(panel, rowY, "Time to level:")
-    rowY = rowY + ROW_SPACING
-    statXpKill = CreateStatRow(panel, rowY, "XP per kill:")
-    rowY = rowY + ROW_SPACING
-    statKills = CreateStatRow(panel, rowY, "Kills to level:")
-    rowY = rowY + ROW_SPACING
-    statXpHour = CreateStatRow(panel, rowY, "XP per hour:")
+    barPercent = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    barPercent:SetPoint("CENTER", bar, "CENTER", 0, 0)
+    barPercent:SetJustifyH("CENTER")
 
-    rowY = rowY + ROW_SPACING + 8
-    statKillTotal = CreateStatRow(panel, rowY, "Kill XP total:")
-    rowY = rowY + ROW_SPACING
-    statQuestTotal = CreateStatRow(panel, rowY, "Quest XP total:")
+    barLevelRight = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    barLevelRight:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
+    barLevelRight:SetJustifyH("RIGHT")
 
-    rowY = rowY + ROW_SPACING + 6
-    statLastKill = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    statLastKill:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -rowY)
-    statLastKill:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -rowY)
-    statLastKill:SetJustifyH("LEFT")
+    rowY = rowY + BAR_HEIGHT + 10
+    statTotal = CreateStatLine(panel, rowY, "LEFT")
+    statScope = CreateStatLine(panel, rowY, "RIGHT")
 
-    rowY = rowY + ROW_SPACING + 2
+    rowY = rowY + ROW_SPACING + 4
     hintLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hintLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -rowY)
     hintLabel:SetText("Right-click for reset options")
@@ -561,6 +316,7 @@ local function CreateMinimized(parent)
     miniLabel = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     miniLabel:SetPoint("LEFT", miniFrame, "LEFT", 0, 0)
     miniLabel:SetJustifyH("LEFT")
+    miniLabel:SetJustifyV("MIDDLE")
     miniLabel:SetWordWrap(false)
 
     RefreshMinimized()
@@ -576,77 +332,55 @@ end
 RefreshPanel = function()
     if not panel or not bar or not bar:IsShown() then return end
 
-    local db = EnsureDB()
     local xp, xpMax, level = ReadPlayerXP()
     local remaining
-    local percent
 
     if xp and xpMax and xpMax > 0 then
         xpMax = math.floor(xpMax)
         xp = math.floor(xp)
         bar:SetMinMaxValues(0, xpMax)
         bar:SetValue(math.min(math.max(xp, 0), xpMax))
-        percent = (xp / xpMax) * 100
         remaining = math.max(0, xpMax - xp)
-        local levelText = level and ("Lvl " .. tostring(level) .. "  |  ") or ""
-        barText:SetText(levelText .. string.format("%.1f%%", percent) .. "  |  "
-            .. FormatNumber(xp) .. " / " .. FormatNumber(xpMax) .. " XP")
+        local percent = (xp / xpMax) * 100
+        barLevelLeft:SetText(level and ("Lvl. " .. tostring(level)) or "Lvl. --")
+        barLevelRight:SetText(level and ("Lvl. " .. tostring(level + 1)) or "Lvl. --")
+        barPercent:SetText(string.format("%.2f%%", percent))
     elseif xpMax and xpMax <= 0 then
         bar:SetMinMaxValues(0, 1)
         bar:SetValue(1)
-        percent = 100
         remaining = 0
-        barText:SetText("MAX LEVEL")
+        barLevelLeft:SetText(level and ("Lvl. " .. tostring(level)) or "Lvl. --")
+        barLevelRight:SetText("MAX")
+        barPercent:SetText("100%")
     else
         bar:SetMinMaxValues(0, 1)
         bar:SetValue(0)
-        percent = 0
         remaining = nil
-        barText:SetText("XP unavailable")
+        barLevelLeft:SetText(level and ("Lvl. " .. tostring(level)) or "Lvl. --")
+        barLevelRight:SetText("Lvl. --")
+        barPercent:SetText("XP unavailable")
     end
 
     local now = GetTime()
     local xpPerHour = GetXpPerHour(now)
     local timeToLevel = (remaining and xpPerHour > 0) and (remaining / (xpPerHour / 3600)) or nil
-    local xpPerKill = db.killCount > 0 and (db.totalKillXp / db.killCount) or 0
-    local killsToLevel = (remaining and db.lastKillXp > 0) and math.ceil(remaining / db.lastKillXp) or nil
 
-    statTime:SetText(FormatDuration(timeToLevel))
-    statXpKill:SetText(FormatNumber(xpPerKill))
-    statKills:SetText(killsToLevel and tostring(killsToLevel) or "--")
-    statXpHour:SetText(FormatNumber(xpPerHour))
-
-    statKillTotal:SetText(FormatNumber(db.totalKillXp) .. "  (" .. FormatNumber(db.killCount) .. " kills)")
-    statQuestTotal:SetText(FormatNumber(db.totalQuestXp))
-
-    if db.lastKillXp > 0 then
-        local name = db.lastKillName or "last mob"
-        statLastKill:SetText("Last kill: " .. name .. " (" .. FormatNumber(db.lastKillXp) .. " XP)")
-    else
-        statLastKill:SetText("Last kill: none recorded")
-    end
+    statGained:SetText("|cff9d9d9dXP Gained:|r " .. FormatNumber(sessionXp))
+    statLeft:SetText("|cff9d9d9dXP Left:|r " .. (remaining and FormatCompact(remaining) or "--"))
+    statHour:SetText("|cff9d9d9dXP/Hour:|r " .. FormatNumber(xpPerHour))
+    statTime:SetText("|cff9d9d9dTime to level:|r " .. FormatDuration(timeToLevel))
+    statSession:SetText("|cff9d9d9dSession time:|r " .. FormatDuration(now - sessionStart))
+    statLastGain:SetText("|cff9d9d9dLast gain:|r " .. (lastGain > 0 and FormatNumber(lastGain) or "--"))
+    statTotal:SetText("|cff9d9d9dTotal XP Gained:|r " .. FormatNumber(sessionXp))
+    statScope:SetText("|cff9d9d9dThis session|r")
 end
 
 RefreshMinimized = function()
     if not miniFrame or not miniLabel then return end
 
-    local xp, xpMax = ReadPlayerXP()
-    local text
-    if xp and xpMax and xpMax > 0 then
-        local percent = (xp / xpMax) * 100
-        local remaining = math.max(0, xpMax - xp)
-        local xpPerHour = GetXpPerHour(GetTime())
-        local timeToLevel = xpPerHour > 0 and (remaining / (xpPerHour / 3600)) or nil
-        text = string.format("XP %.0f%%", percent)
-        if timeToLevel then
-            text = text .. "  |  " .. FormatDuration(timeToLevel) .. " to level"
-        end
-    elseif xpMax and xpMax <= 0 then
-        text = "XP MAX"
-    else
-        text = "XP --"
-    end
-
+    local xpPerHour = GetXpPerHour(GetTime())
+    local text = "|cff9d9d9dGained:|r " .. FormatNumber(sessionXp)
+        .. "\n|cff9d9d9dPer hour:|r " .. FormatNumber(xpPerHour)
     miniLabel:SetText(text)
 
     local textWidth = 0
@@ -658,7 +392,9 @@ RefreshMinimized = function()
     end
     if textWidth <= 0 then
         local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-        textWidth = #plain * 6
+        for line in (plain .. "\n"):gmatch("(.-)\n") do
+            if #line * 6 > textWidth then textWidth = #line * 6 end
+        end
     end
     miniFrame:SetWidth(math.ceil(math.max(textWidth + 2, 60)))
 end
@@ -694,7 +430,6 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
 eventFrame:RegisterEvent("PLAYER_XP_UPDATE")
-eventFrame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         InitializePlayerXP()
@@ -705,7 +440,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local xp, xpMax, level = ReadPlayerXP()
         if not xp or not xpMax then return end
 
-        local now = GetTime()
         if lastPlayerXP == nil or lastPlayerLevel == nil then
             lastPlayerXP = xp
             lastPlayerXPMax = xpMax
@@ -726,14 +460,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         lastPlayerLevel = level
 
         if delta > 0 then
-            EnqueueXpDelta(delta, now)
+            sessionXp = sessionXp + delta
+            lastGain = delta
         end
         RefreshAll()
-    elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
-        local message = ...
-        local amount, kind, name = ParseXpMessage(message)
-        if amount then
-            OnChatXp(amount, kind, name)
-        end
     end
 end)

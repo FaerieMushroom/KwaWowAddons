@@ -4,10 +4,12 @@ Shared window and minimized-bar framework for Kwa addons on **WoW Forever (16001
 
 ## Usage
 
-- `/kwa` or `/kwalite` opens / closes the window.
+- `/kwa` or `/kwalite` toggles the window: closes it if open, opens it if closed.
+- The window opens automatically once per login/reload, starting minimized.
 - The title bar shows the active addon's name, with a 16×16 plugin icon on the right for each registered addon.
 - Other addons register a panel and a minimized widget with `KwaLite:RegisterAddon`.
 - Each addon page has a checkbox at the top: when checked, that addon's compact info appears while the window is minimized.
+- Each compact entry shows the addon's icon to the left of its text, RuneLite-style.
 - If no addon is checked, the minimized bar only shows the `+` button.
 - The close button is intentionally omitted. Right-click the title bar or minimized bar and choose **Close Kwa**.
 

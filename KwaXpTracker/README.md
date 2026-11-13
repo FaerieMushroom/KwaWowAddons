@@ -1,21 +1,22 @@
 # KwaXpTracker
 
-XP tracker plugin for **KwaLite** on **WoW Forever (16001)**. Requires the `KwaLite` addon.
+Session XP tracker plugin for **KwaLite** on **WoW Forever (16001)**. Requires the `KwaLite` addon.
 
 ## Features
 
-- RuneLite-style XP bar for the current level, with percent and XP values.
-- Time to level based on your session XP per hour.
-- XP per kill and kills to level based on your last killed mob.
-- XP per hour for the current session.
-- Persistent totals for quest XP and kill XP.
+- RuneLite-style layout: XP gained, XP left, XP/hour, time to level, session time, and last gain.
+- Solid-color XP bar with the current level on the left, percent in the middle, and next level on the right.
+- Total XP gained is shown for the current session only.
 - Right-click the panel for reset options.
+- Compact minimized display with XP gained and XP/hour (plus the plugin icon in the Kwa Lite minimized bar).
+
+Classic clients do not reliably distinguish quest XP from kill XP in the combat log, so this tracker counts all XP gains together instead of splitting them.
 
 ## Right-click menu
 
-- **Reset XP totals** — clears stored kill/quest XP totals and last-kill data.
-- **Reset XP/hour timer** — restarts the session timer without clearing totals.
-- **Reset all** — clears totals and restarts the session timer.
+- **Reset session XP** — clears the session XP gained and last-gain values.
+- **Reset XP/hour timer** — restarts the session timer without clearing XP.
+- **Reset all** — clears XP and restarts the session timer.
 
 ## Usage
 

@@ -1,7 +1,6 @@
 ## Interface: 16001
 ## Title: KwaXpTracker (WoW Forever)
-## Notes: XP tracker plugin for KwaLite.
-## SavedVariables: KwaXpTrackerDB
+## Notes: Session XP tracker plugin for KwaLite.
 ## Dependencies: KwaLite
 
 KwaXpTracker.lua
