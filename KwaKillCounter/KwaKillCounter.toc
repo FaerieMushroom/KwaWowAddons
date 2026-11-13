@@ -2,6 +2,7 @@
 ## Title: KwaKillCounter (WoW Forever)
 ## Notes: Tracks NPC kills, loot sources, vendor/auction values for WoW Forever.
 ## SavedVariables: MyKillCountTable, KwaTrackerDB
+## Dependencies: KwaLite
 ## OptionalDeps: Auctionator
 
 KwaCore.lua

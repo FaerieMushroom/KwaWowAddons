@@ -7,7 +7,7 @@ Simple WoW addon for tracking NPC kills and item drop sources. Ported to **WoW F
 - **🎯 Kill Tracking**: Automatically records kills of unique NPCs.
 - **🧬 Species Tracking**: Logs kills by NPC species.
 - **💰 Mob value tracking**: Logs kills, displaying average vendor and auction values of that NPC.
-- **🧾 Session Loot Tracker**: `/kwatracker` opens a RuneLite-style loot panel showing only mobs killed this session, with per-item counts and vendor/auction totals.
+- **🧾 Session Loot Tracker**: `/kwa` (or `/kwalite`) opens the Kwa Lite window with a RuneLite-style loot panel showing only mobs killed this session, with per-item counts and vendor/auction totals.
 - **💰 Drop Source Discovery**: Records items dropped by NPCs to help you find where to farm them later.
 
 ## ⌨️ Slash Commands
@@ -17,7 +17,7 @@ Simple WoW addon for tracking NPC kills and item drop sources. Ported to **WoW F
 - `/kwafind [Item Link/Name]` — Searches for NPCs that have dropped a specific item and shows their calculated drop rates.
 - `/kwatopvendor` — Displays the top 10 most profitable NPCs based on vendor value.
 - `/kwatopauction` — Displays the top 10 most profitable NPCs based on auction value (requires Auctionator).
-- `/kwatracker` — Opens the session loot tracker panel.
+- `/kwa` or `/kwalite` — Opens the Kwa Lite window, including the session loot tracker.
 - `/kwapurge` — Clears all loot and value data to remove outliers (kill counts are preserved).
 - `/kwafullpurge` — Fully resets everything: kills, loot, XP, and value data.
 - `/kwahelp` — Displays a list of all available slash commands.
@@ -29,7 +29,8 @@ Simple WoW addon for tracking NPC kills and item drop sources. Ported to **WoW F
 - Each mob shows its kill count and direct coin drops (gold/silver/copper) for the selected view; merged groups show combined totals.
 - The top of the panel shows the current view's total vendor and auction value.
 - `Session loot` checkbox: checked shows this session's drops, unchecked shows all recorded loot.
-- Use the `-` button next to Close to minimize; the compact bar shows session vendor and auction totals with a `+` button to expand.
+- Use the `-` button in the title bar to minimize; the compact bar shows the minimized info for each checked addon, with a `+` button to expand.
+- Right-click the title bar or minimized bar for the `Close Kwa` option.
 - Merged groups persist across reloads and game sessions.
 - Hover items for item tooltips with per-item vendor/auction values.
 - **Ctrl+Click** a mob name to start a merge (the first mob gets a green outline), then Ctrl+Click another mob to merge their tracker entries. Merged entries show the first mob's name with `+X`.
@@ -47,10 +48,11 @@ Simple WoW addon for tracking NPC kills and item drop sources. Ported to **WoW F
 Forever uses its own client folder. Install to:
 
 ```
+World of Warcraft\_forever_\Interface\AddOns\KwaLite\
 World of Warcraft\_forever_\Interface\AddOns\KwaKillCounter\
 ```
 
-Requires the Forever client (`1.60.1`, interface `16001`). Classic Era files will not load. `install.bat` now targets the `_forever_` folder.
+Install **KwaLite** as well as **KwaKillCounter**. Requires the Forever client (`1.60.1`, interface `16001`). Classic Era files will not load. `install.bat` now targets the `_forever_` folder.
 
 ## ⚠️ Known Forever limitations
 

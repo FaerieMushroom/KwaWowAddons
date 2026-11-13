@@ -1,0 +1,6 @@
+## Interface: 16001
+## Title: KwaLite (WoW Forever)
+## Notes: Shared window and minimized-bar framework for Kwa addons.
+## SavedVariables: KwaLiteDB
+
+KwaLite.lua

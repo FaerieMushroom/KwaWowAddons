@@ -7,13 +7,14 @@ local Tracker = {}
 KKK.Tracker = Tracker
 
 local FRAME_WIDTH = 292
-local FRAME_HEIGHT = 458
 local HEADER_HEIGHT = 50
 local ITEM_HEIGHT = 15
 local EMPTY_HEIGHT = 18
 local ROW_GAP = 4
 
-local frame
+local panel
+local miniFrame
+local miniLabel
 local content
 local scroll
 local checkbox
@@ -22,19 +23,7 @@ local totalsLabel
 local emptyLabel
 local contextMenu
 local contextOverlay
-local titleBar
-local titleText
-local closeButton
-local minimizeButton
-local expandButton
-local minimizedLabel
 local footer
-local minimized = false
-
-local MINIMIZED_WIDTH = FRAME_WIDTH
-local MINIMIZED_HEIGHT = 28
-local MINIMIZED_MIN_WIDTH = 140
-local MINIMIZED_MAX_WIDTH = 340
 
 local sessionView = true
 local pendingMerge = nil
@@ -843,48 +832,32 @@ local function SourceTotals(source)
     return vendor, auction + coin
 end
 
-local function UpdateMinimizedSize()
-    if not frame or not minimized or not minimizedLabel then return end
+local function RefreshMinimized()
+    if not miniFrame or not miniLabel then return end
+
+    local vendor, auction = SessionTotals()
+    local text = "|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
+    if HasAuctionData() then
+        text = text .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction)
+    end
+    miniLabel:SetText(text)
 
     local textWidth = 0
-    if minimizedLabel.GetStringWidth then
-        local ok, width = pcall(minimizedLabel.GetStringWidth, minimizedLabel)
+    if miniLabel.GetStringWidth then
+        local ok, width = pcall(miniLabel.GetStringWidth, miniLabel)
         if ok and type(width) == "number" then
             textWidth = width
         end
     end
     if textWidth <= 0 then
-        local text = minimizedLabel:GetText() or ""
-        text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-        for line in (text .. "\n"):gmatch("(.-)\n") do
-            if #line * 6 > textWidth then textWidth = #line * 6 end
-        end
+        local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        textWidth = #plain * 6
     end
-
-    local width = math.ceil(textWidth + 8 + 4 + 20 + 6)
-    if width < MINIMIZED_MIN_WIDTH then width = MINIMIZED_MIN_WIDTH end
-    if width > MINIMIZED_MAX_WIDTH then width = MINIMIZED_MAX_WIDTH end
-    frame:SetSize(width, MINIMIZED_HEIGHT)
-end
-
-local function UpdateMinimizedLabel()
-    if minimizedLabel then
-        local vendor, auction = SessionTotals()
-        local text = "|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
-        if HasAuctionData() then
-            text = text .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction)
-        end
-        minimizedLabel:SetText(text)
-        UpdateMinimizedSize()
-    end
+    miniFrame:SetWidth(math.ceil(math.max(textWidth + 2, 60)))
 end
 
 Refresh = function()
-    if not frame or not frame:IsShown() then return end
-    if minimized then
-        UpdateMinimizedLabel()
-        return
-    end
+    if not panel or not panel:IsShown() then return end
 
     auctionCache = {}
 
@@ -929,140 +902,15 @@ Refresh = function()
     end
 end
 
-local function SavePosition()
-    if not frame then return end
-    local point, _, relativePoint, x, y = frame:GetPoint(1)
-    if point then
-        EnsureDB()
-        KwaTrackerDB.position = {
-            point = point,
-            relativePoint = relativePoint,
-            x = x,
-            y = y,
-        }
-    end
-end
-
-local function SetMinimized(state)
-    if not frame then return end
-    minimized = state and true or false
-
-    if minimized then
-        frame:SetSize(MINIMIZED_WIDTH, MINIMIZED_HEIGHT)
-        if titleText then titleText:Hide() end
-        if checkbox then checkbox:Hide() end
-        if checkLabel then checkLabel:Hide() end
-        if totalsLabel then totalsLabel:Hide() end
-        if scroll then scroll:Hide() end
-        if footer then footer:Hide() end
-        if closeButton then closeButton:Hide() end
-        if minimizeButton then minimizeButton:Hide() end
-        if expandButton then expandButton:Show() end
-        if minimizedLabel then minimizedLabel:Show() end
-        UpdateMinimizedLabel()
-    else
-        frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-        if titleText then titleText:Show() end
-        if checkbox then checkbox:Show() end
-        if checkLabel then checkLabel:Show() end
-        if totalsLabel then totalsLabel:Show() end
-        if scroll then scroll:Show() end
-        if footer then footer:Show() end
-        if closeButton then closeButton:Show() end
-        if minimizeButton then minimizeButton:Show() end
-        if expandButton then expandButton:Hide() end
-        if minimizedLabel then minimizedLabel:Hide() end
-        Refresh()
-    end
-end
-
-local function CreateUI()
-    if frame then return frame end
+local function CreatePanel(parent)
+    if panel then return panel end
 
     LoadMerges()
 
-    frame = CreateFrame("Frame", "KwaLootTrackerFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-    frame:SetFrameStrata("MEDIUM")
-    frame:SetToplevel(true)
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    frame:SetBackdropColor(0.055, 0.055, 0.07, 0.95)
-    frame:SetBackdropBorderColor(0.24, 0.24, 0.3, 1)
+    panel = CreateFrame("Frame", nil, parent)
 
-    local db = EnsureDB()
-    local position = db.position
-    if position and position.point then
-        frame:SetPoint(position.point, UIParent, position.relativePoint or position.point, position.x or 0, position.y or 0)
-    else
-        frame:SetPoint("RIGHT", UIParent, "RIGHT", -80, 40)
-    end
-
-    titleBar = CreateFrame("Frame", nil, frame)
-    titleBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
-    titleBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -1)
-    titleBar:SetHeight(24)
-    titleBar:EnableMouse(true)
-    titleBar:RegisterForDrag("LeftButton")
-    titleBar:SetScript("OnDragStart", function() frame:StartMoving() end)
-    titleBar:SetScript("OnDragStop", function()
-        frame:StopMovingOrSizing()
-        SavePosition()
-    end)
-
-    local titleBackground = titleBar:CreateTexture(nil, "BACKGROUND")
-    titleBackground:SetAllPoints()
-    titleBackground:SetColorTexture(0.10, 0.10, 0.13, 0.95)
-
-    titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetPoint("LEFT", titleBar, "LEFT", 8, 0)
-    titleText:SetText("|cffffd100Kwa Loot Tracker|r")
-
-    minimizedLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    minimizedLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -3)
-    minimizedLabel:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -30, -3)
-    minimizedLabel:SetHeight(MINIMIZED_HEIGHT - 6)
-    minimizedLabel:SetJustifyH("LEFT")
-    minimizedLabel:SetWordWrap(false)
-    minimizedLabel:Hide()
-
-    closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
-    closeButton:SetFrameLevel(frame:GetFrameLevel() + 5)
-    closeButton:SetScript("OnClick", function()
-        frame:Hide()
-    end)
-
-    minimizeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    minimizeButton:SetSize(20, 20)
-    minimizeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -34, -3)
-    minimizeButton:SetFrameLevel(frame:GetFrameLevel() + 5)
-    minimizeButton:SetText("-")
-    minimizeButton:SetScript("OnClick", function()
-        SetMinimized(true)
-    end)
-
-    expandButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    expandButton:SetSize(20, 20)
-    expandButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -3, -3)
-    expandButton:SetFrameLevel(frame:GetFrameLevel() + 5)
-    expandButton:SetText("+")
-    expandButton:Hide()
-    expandButton:SetScript("OnClick", function()
-        SetMinimized(false)
-    end)
-
-    checkbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    checkbox:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -28)
+    checkbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    checkbox:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
     checkbox:SetSize(20, 20)
     checkbox:SetChecked(true)
     checkbox:SetScript("OnClick", function(self)
@@ -1070,6 +918,7 @@ local function CreateUI()
         pendingMerge = nil
         checkLabel:SetText(sessionView and "Session loot" or "Overall loot")
         Refresh()
+        if KwaLite and KwaLite.RefreshMinimized then KwaLite:RefreshMinimized() end
     end)
     checkbox:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1082,19 +931,19 @@ local function CreateUI()
         GameTooltip:Hide()
     end)
 
-    checkLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    checkLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     checkLabel:SetPoint("LEFT", checkbox, "RIGHT", 1, 0)
     checkLabel:SetText("Session loot")
 
-    totalsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalsLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -52)
-    totalsLabel:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -52)
+    totalsLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    totalsLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -24)
+    totalsLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -24)
     totalsLabel:SetJustifyH("LEFT")
     totalsLabel:SetWordWrap(false)
 
-    scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -68)
-    scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 28)
+    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -42)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 22)
     if scroll.ScrollBar then
         scroll.ScrollBar:ClearAllPoints()
         scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -16)
@@ -1110,26 +959,42 @@ local function CreateUI()
     emptyLabel:SetJustifyH("LEFT")
     emptyLabel:SetTextColor(0.6, 0.6, 0.6)
 
-    footer = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 7)
-    footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 7)
+    footer = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    footer:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 4, 6)
+    footer:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -4, 6)
     footer:SetJustifyH("CENTER")
     footer:SetText("Ctrl+Click: merge  |  Right-click: menu")
 
-    frame:SetScript("OnShow", function()
+    panel:SetScript("OnShow", function()
         Refresh()
         if scroll then scroll:SetVerticalScroll(0) end
     end)
-    frame:SetScript("OnHide", function()
+    panel:SetScript("OnHide", function()
         HideContextMenu()
     end)
-    frame:Hide()
 
-    return frame
+    return panel
+end
+
+local function CreateMinimized(parent)
+    if miniFrame then return miniFrame end
+
+    miniFrame = CreateFrame("Frame", nil, parent)
+    miniFrame:SetHeight(20)
+    miniFrame:SetWidth(80)
+    miniFrame:EnableMouse(false)
+
+    miniLabel = miniFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    miniLabel:SetPoint("LEFT", miniFrame, "LEFT", 0, 0)
+    miniLabel:SetJustifyH("LEFT")
+    miniLabel:SetWordWrap(false)
+
+    RefreshMinimized()
+    return miniFrame
 end
 
 function Tracker.Refresh()
-    if frame and frame:IsShown() then
+    if panel and panel:IsShown() then
         Refresh()
     end
 end
@@ -1140,30 +1005,35 @@ function Tracker.OnDataChanged(reason)
         pendingMerge = nil
         SaveMerges()
     end
-    if frame and frame:IsShown() then
+    if panel and panel:IsShown() then
         Refresh()
+    end
+    if KwaLite and KwaLite.RefreshMinimized then
+        KwaLite:RefreshMinimized()
     end
 end
 
 function Tracker.Toggle()
-    local f = CreateUI()
-    if f:IsShown() then
-        f:Hide()
-    else
-        f:Show()
-    end
+    if KwaLite then KwaLite:Toggle() end
 end
 
 function Tracker.Show()
-    local f = CreateUI()
-    f:Show()
+    if KwaLite then KwaLite:Show() end
 end
 
 function Tracker.Hide()
-    if frame then frame:Hide() end
+    if KwaLite then KwaLite:Hide() end
 end
 
-SLASH_KWATRACKER1 = "/kwatracker"
-SlashCmdList["KWATRACKER"] = function()
-    Tracker.Toggle()
+if KwaLite and KwaLite.RegisterAddon then
+    KwaLite:RegisterAddon({
+        id = "KwaKillCounter",
+        name = "Loot Tracker",
+        createPanel = CreatePanel,
+        createMinimized = CreateMinimized,
+        refresh = function() Refresh() end,
+        refreshMinimized = function() RefreshMinimized() end,
+    })
+else
+    print("|cffff0000[KwaKillCounter] KwaLite is required. Install the KwaLite addon to use the loot tracker.|r")
 end
