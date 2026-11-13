@@ -126,10 +126,27 @@ local function AuctionFor(itemID)
     return price
 end
 
+local function HasAuctionData()
+    return KKK.HasAuctionator and KKK.HasAuctionator() or false
+end
+
 local function SumAuction(items)
+    if not HasAuctionData() then return 0 end
+
     local total = 0
     for itemID, count in pairs(items or {}) do
-        total = total + (AuctionFor(itemID) * (tonumber(count) or 0))
+        count = tonumber(count) or 0
+        local price = AuctionFor(itemID)
+        if price <= 0 then
+            -- No auction data for this item: fall back to what the vendor pays
+            -- so the auction side still reflects its value.
+            local numericID = tonumber(itemID)
+            if numericID then
+                local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(numericID)
+                price = sellPrice or 0
+            end
+        end
+        total = total + (price * count)
     end
     return total
 end
@@ -194,7 +211,9 @@ local function ShowMobTooltip(entryWidget)
     AddDoubleLine(tooltip, "Kills (total):", tostring(row.totalKills or 0))
     AddDoubleLine(tooltip, "Coin dropped:", FormatMoney(row.coin or 0))
     AddDoubleLine(tooltip, "Vendor total:", FormatMoney(row.vendor or 0))
-    AddDoubleLine(tooltip, "Auction total:", FormatMoney(SumAuction(row.items)))
+    if HasAuctionData() then
+        AddDoubleLine(tooltip, "Auction total:", FormatMoney(SumAuction(row.items) + (row.coin or 0)))
+    end
     tooltip:AddLine(" ")
     tooltip:AddLine("Ctrl+Click to merge", 0.65, 0.65, 0.65)
     tooltip:AddLine("Right-click for menu", 0.65, 0.65, 0.65)
@@ -565,7 +584,12 @@ local function RenderEntry(entry, row, y)
     entry.kills:SetText("|cff9d9d9dKills:|r " .. tostring(killCount))
 
     entry.vendor:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(row.vendor or 0))
-    entry.auction:SetText("|cff9d9d9dAuction:|r " .. FormatMoney(SumAuction(row.items)))
+    if HasAuctionData() then
+        entry.auction:SetText("|cff9d9d9dAuction:|r " .. FormatMoney(SumAuction(row.items) + (row.coin or 0)))
+        entry.auction:Show()
+    else
+        entry.auction:Hide()
+    end
     entry.coin:SetText("|cff9d9d9dCoin:|r " .. FormatMoney(row.coin or 0))
 
     for index = 1, #items do
@@ -799,21 +823,24 @@ local function SessionTotals()
     local vendor, auction, coin = 0, 0, 0
     local mobs = KKK.Session and KKK.Session.mobs or {}
     for _, entry in pairs(mobs) do
+        -- entry.vendor already includes coin drop value, so only add coin to
+        -- the auction side here to avoid counting it twice.
         vendor = vendor + (entry.vendor or 0)
         coin = coin + (entry.coin or 0)
         auction = auction + SumAuction(entry.items)
     end
-    return vendor + coin, auction + coin
+    return vendor, auction + coin
 end
 
 local function SourceTotals(source)
     local vendor, auction, coin = 0, 0, 0
     for _, item in ipairs(source or {}) do
+        -- As above: vendor totals already contain coin, auction totals do not.
         vendor = vendor + (item.vendor or 0)
         coin = coin + (item.coin or 0)
         auction = auction + SumAuction(item.items)
     end
-    return vendor + coin, auction + coin
+    return vendor, auction + coin
 end
 
 local function UpdateMinimizedSize()
@@ -843,8 +870,11 @@ end
 local function UpdateMinimizedLabel()
     if minimizedLabel then
         local vendor, auction = SessionTotals()
-        minimizedLabel:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
-            .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction))
+        local text = "|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
+        if HasAuctionData() then
+            text = text .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction)
+        end
+        minimizedLabel:SetText(text)
         UpdateMinimizedSize()
     end
 end
@@ -866,8 +896,11 @@ Refresh = function()
     local source = sessionView and BuildSessionSource() or BuildOverallSource()
     local totalVendor, totalAuction = SourceTotals(source)
     if totalsLabel then
-        totalsLabel:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(totalVendor)
-            .. "   |cff9d9d9dAuction:|r " .. FormatMoney(totalAuction))
+        local text = "|cff9d9d9dVendor:|r " .. FormatMoney(totalVendor)
+        if HasAuctionData() then
+            text = text .. "   |cff9d9d9dAuction:|r " .. FormatMoney(totalAuction)
+        end
+        totalsLabel:SetText(text)
     end
 
     local rows = BuildRows(source)

@@ -567,6 +567,14 @@ local function UpdateLootValue(isLootOpened)
     end
 end
 
+-- True when Auctionator's price API is available. The tracker hides auction
+-- values entirely when it isn't, rather than showing a misleading zero.
+function KKK.HasAuctionator()
+    return type(Auctionator) == "table"
+        and type(Auctionator.API) == "table"
+        and type(Auctionator.API.v1) == "table"
+end
+
 -- A single item's auction price, with the same quality sanity filter used by
 -- the original average-value calculation.
 function KKK.GetAuctionPrice(itemID)
@@ -577,7 +585,7 @@ function KKK.GetAuctionPrice(itemID)
     if not itemQuality or itemQuality <= 0 then return 0 end
 
     local ahPrice = 0
-    if Auctionator and Auctionator.API and Auctionator.API.v1 then
+    if KKK.HasAuctionator() then
         local ok, price
         ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "KwaKillCounter", numericID)
         if (not ok or not price) then
