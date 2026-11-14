@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: KwaAuctionSearch (WoW Forever)
+## Notes: Auctionator item price search plugin for KwaLite.
+## Dependencies: KwaLite
+## OptionalDeps: Auctionator
+
+KwaAuctionSearch.lua

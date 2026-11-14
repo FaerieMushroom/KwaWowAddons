@@ -7,8 +7,10 @@ Shared window and minimized-bar framework for Kwa addons on **WoW Forever (16001
 - `/kwa` or `/kwalite` toggles the window: closes it if open, opens it if closed.
 - The window opens automatically once per login/reload, starting minimized.
 - The title bar shows the active addon's name, with a 16×16 plugin icon on the right for each registered addon.
-- Other addons register a panel and a minimized widget with `KwaLite:RegisterAddon`.
-- Each addon page has a checkbox at the top: when checked, that addon's compact info appears while the window is minimized.
+- Other addons register a panel with `KwaLite:RegisterAddon`, and can optionally provide a minimized widget.
+- Each addon that provides a minimized widget has a checkbox at the top of the page: when checked, that addon's compact info appears while the window is minimized.
+- Addons without a minimized widget have no minimized display and no checkbox; their page uses the full panel height.
+- Plugins are ordered by their `priority` value (lowest first); plugins with equal priority keep registration order.
 - Each compact entry shows the addon's icon to the left of its text, RuneLite-style.
 - If no addon is checked, the minimized bar only shows the `+` button.
 - The close button is intentionally omitted. Right-click the title bar or minimized bar and choose **Close Kwa**.
@@ -20,13 +22,15 @@ KwaLite:RegisterAddon({
     id = "MyAddon",
     name = "My Addon",
     icon = "Interface\\Icons\\INV_Misc_Bag_07", -- shown in the right-side plugin bar
+    priority = 0, -- optional; lower values appear higher in the plugin bar
     -- Required: build the full panel page. `parent` is the page content area.
     createPanel = function(parent, addon)
         local page = CreateFrame("Frame", nil, parent)
         -- ... build page contents ...
         return page
     end,
-    -- Required: build the compact widget shown in the minimized bar.
+    -- Optional: build the compact widget shown in the minimized bar.
+    -- Omit this to give the plugin no minimized display.
     createMinimized = function(parent, addon)
         local widget = CreateFrame("Frame", nil, parent)
         -- ... build compact contents ...

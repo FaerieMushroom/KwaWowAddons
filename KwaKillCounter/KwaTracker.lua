@@ -1040,6 +1040,7 @@ if KwaLite and KwaLite.RegisterAddon then
         id = "KwaKillCounter",
         name = "Loot Tracker",
         icon = "Interface\\Icons\\INV_Misc_Bag_07",
+        priority = 0,
         createPanel = CreatePanel,
         createMinimized = CreateMinimized,
         refresh = function() Refresh() end,

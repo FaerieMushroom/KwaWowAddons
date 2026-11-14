@@ -38,6 +38,7 @@ local pluginButtons = {}
 local activeID
 local minimized = false
 local initialized = false
+local addonOrder = 0
 
 local function EnsureDB()
     if type(KwaLiteDB) ~= "table" then
@@ -223,6 +224,13 @@ local function UpdateOptionRow()
     if titleText then
         titleText:SetText("|cffffd100" .. addon.name .. "|r")
     end
+
+    -- Plugins are not required to provide a minimized widget.
+    if not addon.minimizedWidget then
+        optionRow:Hide()
+        return
+    end
+
     optionRow:Show()
     minimizeCheckbox:SetChecked(IsAddonChecked(addon))
     minimizeCheckLabel:SetText("Show " .. addon.name .. " when minimized")
@@ -300,12 +308,19 @@ local function LayoutExpanded()
         pluginBar:Hide()
     end
 
+    local active = addonsByID[activeID]
+    local showOptions = active and active.minimizedWidget ~= nil
+
     optionRow:ClearAllPoints()
-    optionRow:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_LEFT, -y)
-    optionRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -CONTENT_RIGHT, -y)
-    optionRow:SetHeight(OPTION_HEIGHT)
-    optionRow:Show()
-    y = y + OPTION_HEIGHT
+    if showOptions then
+        optionRow:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_LEFT, -y)
+        optionRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -CONTENT_RIGHT, -y)
+        optionRow:SetHeight(OPTION_HEIGHT)
+        optionRow:Show()
+        y = y + OPTION_HEIGHT
+    else
+        optionRow:Hide()
+    end
 
     pageHost:ClearAllPoints()
     pageHost:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_LEFT, -y)
@@ -499,13 +514,16 @@ local function CreateAddonWidgets(addon)
     end
     addon.page = page
 
-    local widget = addon.createMinimized(titleBar, addon)
-    if widget then
-        if widget.SetHeight then widget:SetHeight(MINIMIZED_HEIGHT - 8) end
-        if widget.SetFrameLevel and titleBar then
-            widget:SetFrameLevel(titleBar:GetFrameLevel() + 1)
+    local widget
+    if type(addon.createMinimized) == "function" then
+        widget = addon.createMinimized(titleBar, addon)
+        if widget then
+            if widget.SetHeight then widget:SetHeight(MINIMIZED_HEIGHT - 8) end
+            if widget.SetFrameLevel and titleBar then
+                widget:SetFrameLevel(titleBar:GetFrameLevel() + 1)
+            end
+            widget:Hide()
         end
-        widget:Hide()
     end
     addon.minimizedWidget = widget
 
@@ -524,8 +542,8 @@ function KwaLite:RegisterAddon(config)
     if type(config.createPanel) ~= "function" then
         error("KwaLite:RegisterAddon requires createPanel(parent)")
     end
-    if type(config.createMinimized) ~= "function" then
-        error("KwaLite:RegisterAddon requires createMinimized(parent)")
+    if config.createMinimized ~= nil and type(config.createMinimized) ~= "function" then
+        error("KwaLite:RegisterAddon createMinimized must be a function when provided")
     end
     if addonsByID[config.id] then
         return addonsByID[config.id]
@@ -535,13 +553,25 @@ function KwaLite:RegisterAddon(config)
         id = config.id,
         name = config.name or config.id,
         icon = config.icon,
+        priority = tonumber(config.priority) or 0,
         createPanel = config.createPanel,
         createMinimized = config.createMinimized,
         refresh = config.refresh,
         refreshMinimized = config.refreshMinimized,
     }
+    addonOrder = addonOrder + 1
+    addon.order = addonOrder
     addons[#addons + 1] = addon
     addonsByID[addon.id] = addon
+
+    -- Lower priority values appear first. Tie-break on registration order so
+    -- the list stays deterministic.
+    table.sort(addons, function(a, b)
+        if a.priority ~= b.priority then
+            return a.priority < b.priority
+        end
+        return a.order < b.order
+    end)
 
     local db = GetAddonDB(addon.id)
     if type(db.showMinimized) ~= "boolean" then
@@ -579,6 +609,9 @@ function KwaLite:SelectAddon(id)
 
     UpdatePluginButtons()
     UpdateOptionRow()
+    if not minimized then
+        LayoutExpanded()
+    end
     self:RefreshCurrent()
 end
 
