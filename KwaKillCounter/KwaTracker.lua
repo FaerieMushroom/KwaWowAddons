@@ -6,8 +6,8 @@ local GetCoinTextureString = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureSt
 local Tracker = {}
 KKK.Tracker = Tracker
 
-local FRAME_WIDTH = 292
-local HEADER_HEIGHT = 50
+local FRAME_WIDTH = 308
+local HEADER_HEIGHT = 64
 local ITEM_HEIGHT = 15
 local EMPTY_HEIGHT = 18
 local ROW_GAP = 4
@@ -20,6 +20,7 @@ local scroll
 local checkbox
 local checkLabel
 local totalsLabel
+local totalsAuctionLabel
 local emptyLabel
 local contextMenu
 local contextOverlay
@@ -380,8 +381,8 @@ local function CreateEntryWidget()
     entry.vendor = vendor
 
     local auction = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    auction:SetPoint("TOPRIGHT", entry, "TOPRIGHT", -7, -20)
-    auction:SetJustifyH("RIGHT")
+    auction:SetPoint("TOPLEFT", entry, "TOPLEFT", 7, -48)
+    auction:SetJustifyH("LEFT")
     entry.auction = auction
 
     local coin = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -879,11 +880,15 @@ Refresh = function()
     local source = sessionView and BuildSessionSource() or BuildOverallSource()
     local totalVendor, totalAuction = SourceTotals(source)
     if totalsLabel then
-        local text = "|cff9d9d9dVendor:|r " .. FormatMoney(totalVendor)
+        totalsLabel:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(totalVendor))
+    end
+    if totalsAuctionLabel then
         if HasAuctionData() then
-            text = text .. "   |cff9d9d9dAuction:|r " .. FormatMoney(totalAuction)
+            totalsAuctionLabel:SetText("|cff9d9d9dAuction:|r " .. FormatMoney(totalAuction))
+            totalsAuctionLabel:Show()
+        else
+            totalsAuctionLabel:Hide()
         end
-        totalsLabel:SetText(text)
     end
 
     local rows = BuildRows(source)
@@ -951,8 +956,14 @@ local function CreatePanel(parent)
     totalsLabel:SetJustifyH("LEFT")
     totalsLabel:SetWordWrap(false)
 
+    totalsAuctionLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    totalsAuctionLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -38)
+    totalsAuctionLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -38)
+    totalsAuctionLabel:SetJustifyH("LEFT")
+    totalsAuctionLabel:SetWordWrap(false)
+
     scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -42)
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -56)
     scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 22)
     if scroll.ScrollBar then
         scroll.ScrollBar:ClearAllPoints()
