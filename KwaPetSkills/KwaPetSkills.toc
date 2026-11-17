@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: KwaPetSkills (WoW Forever)
+## Notes: Hunter pet ability and Beast Training reference plugin for KwaLite.
+## Dependencies: KwaLite
+
+KwaPetSkillsData.lua
+KwaPetSkills.lua

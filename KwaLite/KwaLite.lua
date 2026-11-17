@@ -3,7 +3,7 @@ local addonName, KwaLite = ...
 _G.KwaLite = KwaLite
 
 local FRAME_WIDTH = 308
-local FRAME_HEIGHT = 458
+local FRAME_HEIGHT = 600
 local TITLE_HEIGHT = 24
 local OPTION_HEIGHT = 20
 local PLUGIN_BUTTON_SIZE = 20

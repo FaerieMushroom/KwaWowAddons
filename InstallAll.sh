@@ -11,6 +11,7 @@ ADDONS=(
     "KwaKillCounter"
     "KwaXpTracker"
     "KwaAuctionSearch"
+    "KwaPetSkills"
 )
 
 for addon in "${ADDONS[@]}"; do
