@@ -8,6 +8,7 @@ Simple WoW addon for tracking NPC kills and item drop sources. Ported to **WoW F
 - **🧬 Species Tracking**: Logs kills by NPC species.
 - **💰 Mob value tracking**: Logs kills, displaying average vendor and auction values of that NPC.
 - **🧾 Session Loot Tracker**: `/kwa` (or `/kwalite`) opens the Kwa Lite window with a RuneLite-style loot panel showing only mobs killed this session, with per-item counts and vendor/auction totals.
+- **📊 Kill Counter panel**: a second Kwa Lite plugin with a dropdown for **Top kills**, **Kills by species**, **Most profitable vendor**, and **Most profitable auction**.
 - **💰 Drop Source Discovery**: Records items dropped by NPCs to help you find where to farm them later.
 
 ## ⌨️ Slash Commands
@@ -22,8 +23,16 @@ Simple WoW addon for tracking NPC kills and item drop sources. Ported to **WoW F
 - `/kwafullpurge` — Fully resets everything: kills, loot, XP, and value data.
 - `/kwahelp` — Displays a list of all available slash commands.
 
-## 🧾 Loot Tracker
+## 📊 Kill Counter Panel
+A separate page in the Kwa Lite plugin bar, alongside Loot Tracker. A dropdown at the top switches views, defaulting to **Top kills**:
+- **Top kills** — total kills plus every recorded NPC ranked by kill count.
+- **Kills by species** — kills grouped by NPC species (Beast, Humanoid, Undead, and so on).
+- **Most profitable vendor** — average vendor loot value per kill, minimum 10 kills.
+- **Most profitable auction** — average auction value per kill, minimum 10 kills (requires Auctionator).
 
+The list updates as you kill and loot while the page is open.
+
+## 🧾 Loot Tracker
 - The panel starts empty each time the addon loads and only lists mobs killed during that session.
 - Each mob's section moves to the top when it is killed again.
 - Each mob shows its kill count and direct coin drops (gold/silver/copper) for the selected view; merged groups show combined totals.

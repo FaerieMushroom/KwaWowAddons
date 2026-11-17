@@ -69,6 +69,9 @@ function KKK.NotifyTracker(reason, npcID)
     if KKK.Tracker and KKK.Tracker.OnDataChanged then
         KKK.Tracker.OnDataChanged(reason, npcID)
     end
+    if KKK.KillStats and KKK.KillStats.OnDataChanged then
+        KKK.KillStats.OnDataChanged(reason, npcID)
+    end
 end
 
 function KKK.GetSessionMob(npcID, name, race)

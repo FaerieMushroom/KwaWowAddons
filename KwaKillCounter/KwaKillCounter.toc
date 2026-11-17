@@ -8,3 +8,4 @@
 KwaCore.lua
 KwaCommands.lua
 KwaTracker.lua
+KwaKillStats.lua
