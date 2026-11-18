@@ -15,6 +15,7 @@ This addon is optional: it only registers itself when **Auctionator** is install
   - **Max** — the highest price ever seen in the stored history.
   - **Avg** — Auctionator's mean price when available.
 - Hover an item for its full tooltip.
+- Click an item to open its **price history** page: a chart of the stored daily low/max prices, plus **Recent**, **Avg**, **Low**, and **High** values. Hover the chart to see each date's low and max at its vertex; use the `<` button to return to the results.
 - Shift-click a row to insert the item link into chat.
 - Results update once Auctionator finishes a new scan.
 - No minimized-bar display; the search panel is only available in the expanded window.
