@@ -25,6 +25,11 @@ local emptyLabel
 local contextMenu
 local contextOverlay
 local footer
+local settingsPanel
+local modeDropdown
+local modeDropdownLabel
+local modeMenu
+local modeOverlay
 
 local sessionView = true
 local pendingMerge = nil
@@ -40,6 +45,37 @@ local function EnsureDB()
         KwaTrackerDB = {}
     end
     return KwaTrackerDB
+end
+
+local MINIMIZED_MODES = {
+    { id = "vendor", label = "Vendor" },
+    { id = "auction", label = "Auction" },
+    { id = "both", label = "Both" },
+}
+
+local function GetMinimizedMode()
+    local mode = EnsureDB().minimizedMode
+    if mode ~= "vendor" and mode ~= "auction" then
+        mode = "both"
+    end
+    return mode
+end
+
+local function SetMinimizedMode(mode)
+    if mode ~= "vendor" and mode ~= "auction" then
+        mode = "both"
+    end
+    EnsureDB().minimizedMode = mode
+    if KwaLite and KwaLite.RefreshMinimized then
+        KwaLite:RefreshMinimized()
+    end
+end
+
+local function MinimizedModeLabel(mode)
+    for _, option in ipairs(MINIMIZED_MODES) do
+        if option.id == mode then return option.label end
+    end
+    return "Both"
 end
 
 local function SaveMerges()
@@ -837,9 +873,17 @@ local function RefreshMinimized()
     if not miniFrame or not miniLabel then return end
 
     local vendor, auction = SessionTotals()
-    local text = "|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
-    if HasAuctionData() then
-        text = text .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction)
+    local mode = GetMinimizedMode()
+    local text
+    if mode == "vendor" then
+        text = "|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
+    elseif mode == "auction" then
+        text = "|cff9d9d9dAuction:|r " .. FormatMoney(auction)
+    else
+        text = "|cff9d9d9dVendor:|r " .. FormatMoney(vendor)
+        if HasAuctionData() then
+            text = text .. "  |cff9d9d9dAuction:|r " .. FormatMoney(auction)
+        end
     end
     miniLabel:SetText(text)
 
@@ -997,6 +1041,162 @@ local function CreatePanel(parent)
     return panel
 end
 
+local function HideModeMenu()
+    if modeMenu then modeMenu:Hide() end
+    if modeOverlay then modeOverlay:Hide() end
+end
+
+local function CreateModeMenu()
+    if modeMenu then return modeMenu end
+
+    modeOverlay = CreateFrame("Frame", nil, UIParent)
+    modeOverlay:SetAllPoints(UIParent)
+    modeOverlay:SetFrameStrata("DIALOG")
+    modeOverlay:EnableMouse(true)
+    modeOverlay:Hide()
+    modeOverlay:SetScript("OnMouseDown", HideModeMenu)
+
+    modeMenu = CreateFrame("Frame", "KwaTrackerMinimizedMenu", UIParent, "BackdropTemplate")
+    modeMenu:SetFrameStrata("TOOLTIP")
+    modeMenu:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    modeMenu:SetBackdropColor(0.055, 0.055, 0.07, 0.98)
+    modeMenu:SetBackdropBorderColor(0.24, 0.24, 0.3, 1)
+    modeMenu:EnableMouse(true)
+    modeMenu:Hide()
+    modeMenu:SetScript("OnHide", function()
+        if modeOverlay then modeOverlay:Hide() end
+    end)
+
+    modeMenu.buttons = {}
+    for index, option in ipairs(MINIMIZED_MODES) do
+        local button = CreateFrame("Button", nil, modeMenu)
+        button:SetHeight(20)
+        button:SetPoint("TOPLEFT", modeMenu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
+        button:SetPoint("TOPRIGHT", modeMenu, "TOPRIGHT", -1, -((index - 1) * 20 + 4))
+
+        local background = button:CreateTexture(nil, "BACKGROUND")
+        background:SetAllPoints()
+        background:SetColorTexture(1, 1, 1, 0.08)
+        background:Hide()
+        button.background = background
+
+        local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        text:SetPoint("LEFT", button, "LEFT", 8, 0)
+        text:SetJustifyH("LEFT")
+        text:SetText(option.label)
+        button.text = text
+        button.optionID = option.id
+
+        button:SetScript("OnEnter", function(self) self.background:Show() end)
+        button:SetScript("OnLeave", function(self) self.background:Hide() end)
+        button:SetScript("OnClick", function(self)
+            SetMinimizedMode(self.optionID)
+            if modeDropdownLabel then
+                modeDropdownLabel:SetText(MinimizedModeLabel(GetMinimizedMode()))
+            end
+            HideModeMenu()
+        end)
+
+        modeMenu.buttons[index] = button
+    end
+
+    modeMenu:SetWidth(150)
+    modeMenu:SetHeight(8 + (#MINIMIZED_MODES * 20))
+    return modeMenu
+end
+
+local function ShowModeMenu()
+    local frame = CreateModeMenu()
+    local mode = GetMinimizedMode()
+    for _, button in ipairs(frame.buttons) do
+        local selected = button.optionID == mode
+        button.text:SetTextColor(selected and 1 or 0.7, selected and 0.82 or 0.7, selected and 0 or 0.7)
+        button.background:Hide()
+    end
+
+    local x, y = modeDropdown:GetLeft(), modeDropdown:GetBottom()
+    if not x or not y then return end
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y - 2)
+    modeOverlay:Show()
+    frame:Show()
+end
+
+local function CreateSettings(parent)
+    if settingsPanel then return settingsPanel end
+
+    settingsPanel = CreateFrame("Frame", nil, parent)
+
+    local heading = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    heading:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 0, 0)
+    heading:SetText("|cffffd100Minimized bar|r")
+
+    local description = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    description:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", 0, -6)
+    description:SetPoint("TOPRIGHT", settingsPanel, "TOPRIGHT", -8, -22)
+    description:SetJustifyH("LEFT")
+    description:SetWordWrap(true)
+    description:SetText("Choose what the compact loot entry shows while Kwa Lite is minimized.")
+
+    local label = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 0, -60)
+    label:SetText("Display:")
+
+    modeDropdown = CreateFrame("Button", nil, settingsPanel, "BackdropTemplate")
+    modeDropdown:SetSize(150, 20)
+    modeDropdown:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -6)
+    modeDropdown:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    modeDropdown:SetBackdropColor(0.08, 0.08, 0.1, 1)
+    modeDropdown:SetBackdropBorderColor(0.3, 0.3, 0.36, 1)
+
+    modeDropdownLabel = modeDropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    modeDropdownLabel:SetPoint("LEFT", modeDropdown, "LEFT", 8, 0)
+    modeDropdownLabel:SetPoint("RIGHT", modeDropdown, "RIGHT", -20, 0)
+    modeDropdownLabel:SetJustifyH("LEFT")
+    modeDropdownLabel:SetText(MinimizedModeLabel(GetMinimizedMode()))
+
+    local arrow = modeDropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    arrow:SetPoint("RIGHT", modeDropdown, "RIGHT", -8, 0)
+    arrow:SetText("v")
+
+    modeDropdown:SetScript("OnClick", function()
+        if modeMenu and modeMenu:IsShown() then
+            HideModeMenu()
+        else
+            ShowModeMenu()
+        end
+    end)
+    modeDropdown:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(0.5, 0.5, 0.58, 1)
+    end)
+    modeDropdown:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(0.3, 0.3, 0.36, 1)
+    end)
+
+    settingsPanel:SetScript("OnShow", function()
+        if modeDropdownLabel then
+            modeDropdownLabel:SetText(MinimizedModeLabel(GetMinimizedMode()))
+        end
+    end)
+    settingsPanel:SetScript("OnHide", HideModeMenu)
+
+    return settingsPanel
+end
+
 local function CreateMinimized(parent)
     if miniFrame then return miniFrame end
 
@@ -1054,6 +1254,7 @@ if KwaLite and KwaLite.RegisterAddon then
         priority = 0,
         createPanel = CreatePanel,
         createMinimized = CreateMinimized,
+        createSettings = CreateSettings,
         refresh = function() Refresh() end,
         refreshMinimized = function() RefreshMinimized() end,
     })

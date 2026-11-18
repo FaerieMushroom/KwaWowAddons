@@ -1030,12 +1030,10 @@ local function CreatePanel(parent)
     detailHeader:SetHeight(44)
     detailHeader:Hide()
 
-    backButton = CreateFrame("Button", nil, detailHeader)
-    backButton:SetSize(18, 18)
+    backButton = CreateFrame("Button", nil, detailHeader, "UIPanelButtonTemplate")
+    backButton:SetSize(22, 20)
     backButton:SetPoint("TOPLEFT", detailHeader, "TOPLEFT", 0, -2)
-    local backText = backButton:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    backText:SetAllPoints()
-    backText:SetText("<")
+    backButton:SetText("<")
     backButton:SetScript("OnClick", function()
         mode = "browse"
         selectedID = nil

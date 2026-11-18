@@ -30,6 +30,7 @@ The first page in the Kwa Lite plugin bar lists every registered plugin.
 - The search box filters the plugin list by name or ID.
 - Each plugin has an enabled checkbox. Unchecked plugins are removed from the plugin bar and minimized bar, and their pages cannot be opened until they are checked again.
 - A **Settings** button appears next to a plugin only when that plugin registers its own settings panel.
+- Loot Tracker has settings: **Display** controls what its minimized entry shows — `Vendor`, `Auction`, or `Both` (default).
 - The Settings plugin itself is not listed, so it cannot be disabled.
 
 ## 📊 Kill Counter Panel

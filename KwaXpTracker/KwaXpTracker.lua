@@ -462,14 +462,7 @@ RefreshMinimized = function()
         and (remaining / (xpPerHour / 3600)) or nil
     local toLevelText = (remaining == 0) and "MAX" or FormatDuration(timeToLevel)
 
-    -- Average of the last 3 XP gains, used for the remaining drops estimate.
-    local recentAvg = GetRecentAverageGain()
-    local dropsToLevel = (remaining and remaining > 0 and recentAvg > 0)
-        and math.ceil(remaining / recentAvg) or nil
-    local dropsText = (remaining == 0) and "MAX" or (dropsToLevel and tostring(dropsToLevel) or "--")
-
-    local text = "|cff9d9d9dDrops:|r " .. dropsText
-        .. "   |cff9d9d9dTo Level:|r " .. toLevelText
+    local text = "|cff9d9d9dTo Level:|r " .. toLevelText
     miniLabel:SetText(text)
 
     local plain = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")

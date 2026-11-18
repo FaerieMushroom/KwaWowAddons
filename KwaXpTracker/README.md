@@ -10,7 +10,7 @@ Session XP tracker plugin for **KwaLite** on **WoW Forever (16001)**. Requires t
 - Total XP gained is shown for the current session only.
 - Refreshes every 30 seconds so XP/hour, session time, and time-to-level stay current.
 - Right-click the panel for reset options and to pause/resume tracking.
-- Compact minimized display with remaining XP drops (average of the last 3 XP gains) and time to level (plus the plugin icon in the Kwa Lite minimized bar).
+- Compact minimized display with just the time to level (plus the plugin icon in the Kwa Lite minimized bar).
 
 Classic clients do not reliably distinguish quest XP from kill XP in the combat log, so this tracker counts all XP gains together instead of splitting them.
 
