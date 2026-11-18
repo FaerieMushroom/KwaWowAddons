@@ -47,7 +47,7 @@ Another page in the Kwa Lite plugin bar. Opening it lists every recorded item, s
 - The **Sort** dropdown switches between `Drop count` and `Alphabetical`; the choice is remembered. Each row shows the item's total drop count.
 - The full matching list is available; only the rows on screen are drawn, so long lists scroll smoothly.
 - Click an item to open its details: icon (with item tooltip), name, vendor value, and Auctionator value when available.
-- **Sources** tab: the mobs that dropped it, sorted by drop rate, each with how many times it was seen from that source (`3x · 30.0%`), plus a **Crafted by** section when one of your known recipes makes the item.
+- **Sources** tab: the mobs that dropped it, sorted by drop rate, each with how many times it was seen from that source (`3x · 30.0%`, or `3x · ??%` when that mob has fewer than 5 recorded kills), plus a **Crafted by** section when one of your known recipes makes the item.
 - **Uses** tab: known profession recipes that use the item as a reagent, with the required count.
 - Recipe knowledge is recorded from your character's learned professions. Open each profession window once so the addon can scan its recipes; the results persist across sessions.
 - Source data updates live as you kill and loot while the panel is open.

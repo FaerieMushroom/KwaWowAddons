@@ -11,6 +11,7 @@ local RECIPE_VERSION = 1
 local ROW_HEIGHT = 20
 local ICON_SIZE = 16
 local DETAIL_VALUE_WIDTH = 105
+local MIN_SOURCE_SAMPLES = 5
 
 local SORT_OPTIONS = {
     { id = "drops", label = "Drop count" },
@@ -183,6 +184,9 @@ local function BuildItemIndex()
 
     for _, entry in pairs(index) do
         table.sort(entry.sources, function(a, b)
+            local aKnown = (a.samples or 0) >= MIN_SOURCE_SAMPLES
+            local bKnown = (b.samples or 0) >= MIN_SOURCE_SAMPLES
+            if aKnown ~= bKnown then return aKnown end
             if a.rate ~= b.rate then return a.rate > b.rate end
             return (a.name or "") < (b.name or "")
         end)
@@ -690,8 +694,10 @@ RefreshDetail = function()
         if #sources > 0 then
             y = AddDetailHeader(y, "Dropped by (" .. #sources .. ")")
             for _, source in ipairs(sources) do
+                local rateText = ((source.samples or 0) < MIN_SOURCE_SAMPLES)
+                    and "??%" or string.format("%.1f%%", source.rate)
                 y = AddDetailRow(y, nil, source.name,
-                    string.format("%dx · %.1f%%", source.drops, source.rate))
+                    string.format("%dx · %s", source.drops, rateText))
             end
         end
 
