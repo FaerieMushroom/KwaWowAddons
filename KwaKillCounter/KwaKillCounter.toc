@@ -6,6 +6,8 @@
 ## OptionalDeps: Auctionator
 
 KwaCore.lua
+KwaSettings.lua
 KwaCommands.lua
 KwaTracker.lua
 KwaKillStats.lua
+KwaItemLookup.lua

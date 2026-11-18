@@ -5,12 +5,12 @@ Session XP tracker plugin for **KwaLite** on **WoW Forever (16001)**. Requires t
 ## Features
 
 - RuneLite-style layout: XP gained, XP left, XP/hour, time to level, XP/drop, and drops to level.
-- Drops to level uses the average XP per gain event, since classic clients don’t reliably separate quest and kill XP.
+- Drops to level uses the average of the last 3 XP gain events, since classic clients don’t reliably separate quest and kill XP.
 - Solid-color XP bar with the current level on the left, percent in the middle, and next level on the right.
 - Total XP gained is shown for the current session only.
 - Refreshes every 30 seconds so XP/hour, session time, and time-to-level stay current.
 - Right-click the panel for reset options and to pause/resume tracking.
-- Compact minimized display with XP total and time to level (plus the plugin icon in the Kwa Lite minimized bar).
+- Compact minimized display with remaining XP drops (average of the last 3 XP gains) and time to level (plus the plugin icon in the Kwa Lite minimized bar).
 
 Classic clients do not reliably distinguish quest XP from kill XP in the combat log, so this tracker counts all XP gains together instead of splitting them.
 

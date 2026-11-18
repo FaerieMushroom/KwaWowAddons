@@ -7,7 +7,7 @@ DEST_DIR="/home/keira/.local/share/Steam/steamapps/compatdata/2880841926/pfx/dri
 
 mkdir -p "$DEST_DIR"
 
-for f in KwaCore.lua KwaCommands.lua KwaTracker.lua KwaKillStats.lua KwaKillCounter.toc; do
+for f in KwaCore.lua KwaSettings.lua KwaCommands.lua KwaTracker.lua KwaKillStats.lua KwaItemLookup.lua KwaKillCounter.toc; do
     if [[ ! -f "$SCRIPT_DIR/$f" ]]; then
         echo "Missing file: $SCRIPT_DIR/$f" >&2
         exit 1

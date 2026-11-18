@@ -38,6 +38,10 @@ local lastPlayerLevel
 local sessionXp = 0
 local gainCount = 0
 local lastGain = 0
+local recentGains = {}
+local recentGainTotal = 0
+local recentGainIndex = 0
+local RECENT_GAIN_SAMPLES = 3
 local sessionStart = GetTime()
 local paused = false
 local pausedAt = 0
@@ -125,10 +129,30 @@ local function GetActiveElapsed(now)
     return elapsed
 end
 
+local function AddRecentGain(delta)
+    local index = (recentGainIndex % RECENT_GAIN_SAMPLES) + 1
+    local old = recentGains[index]
+    if old then
+        recentGainTotal = recentGainTotal - old
+    end
+    recentGains[index] = delta
+    recentGainTotal = recentGainTotal + delta
+    recentGainIndex = recentGainIndex + 1
+end
+
+local function GetRecentAverageGain()
+    local count = math.min(recentGainIndex, RECENT_GAIN_SAMPLES)
+    if count == 0 then return 0 end
+    return recentGainTotal / count
+end
+
 local function ResetTotals()
     sessionXp = 0
     gainCount = 0
     lastGain = 0
+    recentGains = {}
+    recentGainTotal = 0
+    recentGainIndex = 0
     RefreshAll()
 end
 
@@ -405,7 +429,7 @@ RefreshPanel = function()
     local now = GetTime()
     local xpPerHour = GetXpPerHour(now)
     local timeToLevel = (remaining and xpPerHour > 0) and (remaining / (xpPerHour / 3600)) or nil
-    local avgDrop = gainCount > 0 and (sessionXp / gainCount) or 0
+    local avgDrop = GetRecentAverageGain()
     local dropsToLevel = (remaining and remaining > 0 and avgDrop > 0)
         and math.ceil(remaining / avgDrop) or nil
     local dropsText = (remaining == 0) and "MAX" or (dropsToLevel and tostring(dropsToLevel) or "--")
@@ -438,7 +462,13 @@ RefreshMinimized = function()
         and (remaining / (xpPerHour / 3600)) or nil
     local toLevelText = (remaining == 0) and "MAX" or FormatDuration(timeToLevel)
 
-    local text = "|cff9d9d9dXP:|r " .. FormatNumber(sessionXp)
+    -- Average of the last 3 XP gains, used for the remaining drops estimate.
+    local recentAvg = GetRecentAverageGain()
+    local dropsToLevel = (remaining and remaining > 0 and recentAvg > 0)
+        and math.ceil(remaining / recentAvg) or nil
+    local dropsText = (remaining == 0) and "MAX" or (dropsToLevel and tostring(dropsToLevel) or "--")
+
+    local text = "|cff9d9d9dDrops:|r " .. dropsText
         .. "   |cff9d9d9dTo Level:|r " .. toLevelText
     miniLabel:SetText(text)
 
@@ -537,6 +567,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
             sessionXp = sessionXp + delta
             gainCount = gainCount + 1
             lastGain = delta
+            AddRecentGain(delta)
         end
         RefreshAll()
     end

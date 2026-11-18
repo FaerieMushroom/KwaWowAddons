@@ -64,6 +64,20 @@ local function IsAddonChecked(addon)
     return GetAddonDB(addon.id).showMinimized and true or false
 end
 
+local function IsAddonEnabled(addon)
+    return GetAddonDB(addon.id).enabled ~= false
+end
+
+local function GetVisibleAddons()
+    local list = {}
+    for _, addon in ipairs(addons) do
+        if IsAddonEnabled(addon) then
+            list[#list + 1] = addon
+        end
+    end
+    return list
+end
+
 local function HideContextMenu()
     if contextMenu then contextMenu:Hide() end
     if contextOverlay then contextOverlay:Hide() end
@@ -156,7 +170,7 @@ end
 local function RefreshMinimizedWidgets()
     for _, addon in ipairs(addons) do
         local widget = addon.minimizedWidget
-        if widget and IsAddonChecked(addon) and addon.refreshMinimized then
+        if widget and IsAddonEnabled(addon) and IsAddonChecked(addon) and addon.refreshMinimized then
             pcall(addon.refreshMinimized, widget, addon)
         end
     end
@@ -183,7 +197,7 @@ local function LayoutMinimized()
         local widget = addon.minimizedWidget
         local icon = addon.minimizedIcon
         if widget then
-            if IsAddonChecked(addon) then
+            if IsAddonEnabled(addon) and IsAddonChecked(addon) then
                 icon = GetMinimizedIcon(addon)
                 icon:ClearAllPoints()
                 icon:SetPoint("LEFT", titleBar, "LEFT", x, 0)
@@ -237,7 +251,8 @@ local function UpdateOptionRow()
 end
 
 local function UpdatePluginButtons()
-    for index, addon in ipairs(addons) do
+    local visible = GetVisibleAddons()
+    for index, addon in ipairs(visible) do
         local button = pluginButtons[index]
         if not button then
             button = CreateFrame("Button", nil, pluginBar)
@@ -283,11 +298,11 @@ local function UpdatePluginButtons()
         button.background:SetShown(addon.id == activeID)
     end
 
-    for index = #addons + 1, #pluginButtons do
+    for index = #visible + 1, #pluginButtons do
         pluginButtons[index]:Hide()
     end
 
-    for index = 1, #addons do
+    for index = 1, #visible do
         local button = pluginButtons[index]
         button:ClearAllPoints()
         button:SetPoint("TOP", pluginBar, "TOP", 0, -((index - 1) * (PLUGIN_BUTTON_SIZE + PLUGIN_BUTTON_GAP)))
@@ -298,11 +313,12 @@ local function LayoutExpanded()
     if not frame then return end
 
     local y = TITLE_HEIGHT
-    if #addons > 0 then
+    local visibleCount = #GetVisibleAddons()
+    if visibleCount > 0 then
         pluginBar:ClearAllPoints()
         pluginBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -(TITLE_HEIGHT + 4))
         pluginBar:SetWidth(PLUGIN_BUTTON_SIZE)
-        pluginBar:SetHeight((#addons * (PLUGIN_BUTTON_SIZE + PLUGIN_BUTTON_GAP)) - PLUGIN_BUTTON_GAP)
+        pluginBar:SetHeight((visibleCount * (PLUGIN_BUTTON_SIZE + PLUGIN_BUTTON_GAP)) - PLUGIN_BUTTON_GAP)
         pluginBar:Show()
     else
         pluginBar:Hide()
@@ -545,6 +561,9 @@ function KwaLite:RegisterAddon(config)
     if config.createMinimized ~= nil and type(config.createMinimized) ~= "function" then
         error("KwaLite:RegisterAddon createMinimized must be a function when provided")
     end
+    if config.createSettings ~= nil and type(config.createSettings) ~= "function" then
+        error("KwaLite:RegisterAddon createSettings must be a function when provided")
+    end
     if addonsByID[config.id] then
         return addonsByID[config.id]
     end
@@ -558,6 +577,7 @@ function KwaLite:RegisterAddon(config)
         createMinimized = config.createMinimized,
         refresh = config.refresh,
         refreshMinimized = config.refreshMinimized,
+        createSettings = config.createSettings,
     }
     addonOrder = addonOrder + 1
     addon.order = addonOrder
@@ -577,8 +597,11 @@ function KwaLite:RegisterAddon(config)
     if type(db.showMinimized) ~= "boolean" then
         db.showMinimized = config.showMinimizedByDefault ~= false
     end
+    if type(db.enabled) ~= "boolean" then
+        db.enabled = true
+    end
 
-    if not activeID then activeID = addon.id end
+    if not activeID and db.enabled ~= false then activeID = addon.id end
 
     CreateUI()
     CreateAddonWidgets(addon)
@@ -598,7 +621,7 @@ end
 
 function KwaLite:SelectAddon(id)
     local addon = addonsByID[id]
-    if not addon then return end
+    if not addon or not IsAddonEnabled(addon) then return end
 
     activeID = id
     for _, entry in ipairs(addons) do
@@ -613,6 +636,69 @@ function KwaLite:SelectAddon(id)
         LayoutExpanded()
     end
     self:RefreshCurrent()
+end
+
+function KwaLite:GetAddons()
+    local list = {}
+    for _, addon in ipairs(addons) do
+        list[#list + 1] = addon
+    end
+    return list
+end
+
+function KwaLite:GetAddon(id)
+    return addonsByID[id]
+end
+
+function KwaLite:IsAddonEnabled(id)
+    local addon = addonsByID[id]
+    if not addon then return false end
+    return IsAddonEnabled(addon)
+end
+
+function KwaLite:SetAddonEnabled(id, state)
+    local addon = addonsByID[id]
+    if not addon then return end
+
+    local enabled = state and true or false
+    GetAddonDB(id).enabled = enabled
+
+    if not enabled and activeID == id then
+        if addon.page then addon.page:Hide() end
+        activeID = nil
+        for _, entry in ipairs(addons) do
+            if IsAddonEnabled(entry) then
+                activeID = entry.id
+                if entry.page then entry.page:Show() end
+                break
+            end
+        end
+    end
+
+    UpdatePluginButtons()
+    UpdateOptionRow()
+    if minimized then
+        LayoutMinimized()
+    else
+        LayoutExpanded()
+    end
+    self:RefreshCurrent()
+end
+
+function KwaLite:HasAddonSettings(id)
+    local addon = addonsByID[id]
+    return addon ~= nil and type(addon.createSettings) == "function"
+end
+
+-- Builds a plugin's settings panel inside the caller-provided parent. Returns
+-- nil when the plugin did not register settings.
+function KwaLite:CreateAddonSettings(id, parent)
+    local addon = addonsByID[id]
+    if not addon or type(addon.createSettings) ~= "function" then return nil end
+    if not addon.settingsPage then
+        addon.settingsPage = addon.createSettings(parent, addon)
+    end
+    return addon.settingsPage
 end
 
 function KwaLite:RefreshCurrent()

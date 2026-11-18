@@ -5,9 +5,11 @@ if not exist "%DEST_DIR%" (
     mkdir "%DEST_DIR%"
 )
 copy "%~dp0KwaCore.lua" "%DEST_DIR%\"
+copy "%~dp0KwaSettings.lua" "%DEST_DIR%\"
 copy "%~dp0KwaCommands.lua" "%DEST_DIR%\"
 copy "%~dp0KwaTracker.lua" "%DEST_DIR%\"
 copy "%~dp0KwaKillStats.lua" "%DEST_DIR%\"
+copy "%~dp0KwaItemLookup.lua" "%DEST_DIR%\"
 copy "%~dp0KwaKillCounter.toc" "%DEST_DIR%\"
 
 echo Files copied successfully to %DEST_DIR%
