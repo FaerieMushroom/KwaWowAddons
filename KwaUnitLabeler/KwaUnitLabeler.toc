@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: KwaUnitLabeler (WoW Forever)
+## Notes: Adds a chosen icon to matching friendly/enemy nameplates in KwaLite.
+## SavedVariables: KwaUnitLabelerDB
+## Dependencies: KwaLite
+
+KwaUnitLabeler.lua
