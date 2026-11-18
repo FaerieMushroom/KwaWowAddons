@@ -40,7 +40,7 @@ A separate page in the Kwa Lite plugin bar, alongside Loot Tracker. A dropdown a
 - **Most profitable vendor** — average vendor loot value per kill, minimum 10 kills.
 - **Most profitable auction** — average auction value per kill, minimum 10 kills (requires Auctionator).
 
-The list updates as you kill and loot while the page is open.
+The list updates as you kill and loot while the page is open. **Most profitable auction** waits briefly for the client to finish loading item info, then ranks every eligible mob, so the list does not change while item links are still resolving.
 
 ## 🔎 Item Lookup Panel
 Another page in the Kwa Lite plugin bar. Opening it lists every recorded item, sorted by drop count by default. Type in the search box (item name or item ID) to filter the list; every keystroke updates the results immediately using names already cached by the client, and missing item names are loaded a few at a time in the background so the list fills in without an FPS hit.

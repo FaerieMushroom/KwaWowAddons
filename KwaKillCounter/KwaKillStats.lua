@@ -4,6 +4,7 @@ local addonName, KKK = ...
 -- /kwatopauction commands. Registers as a separate KwaLite plugin.
 
 local GetCoinTextureString = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 
 local ROW_HEIGHT = 18
 local MIN_KILLS = 10
@@ -20,6 +21,8 @@ local overlay
 local rows = {}
 local rowCount = 0
 local auctionCache = {}
+local auctionLoadStarted
+local requestedItems = {}
 
 local currentView = "kills"
 
@@ -73,6 +76,18 @@ local function MobAuctionValue(npcID)
     return total / data.looted
 end
 
+local function ItemInfoReady(itemID)
+    if not GetItemInfo then return true end
+    if GetItemInfo(itemID) then return true end
+    if not requestedItems[itemID] then
+        requestedItems[itemID] = true
+        if C_Item and C_Item.RequestLoadItemDataByID then
+            pcall(C_Item.RequestLoadItemDataByID, itemID)
+        end
+    end
+    return false
+end
+
 local function SortRows(list, compare)
     table.sort(list, function(a, b)
         if a.value ~= b.value then return compare(a, b) end
@@ -84,6 +99,7 @@ local function BuildRows()
     local list = {}
     local note
     local money = false
+    local loading = false
     local table_ = MyKillCountTable or {}
 
     if currentView == "kills" then
@@ -141,24 +157,48 @@ local function BuildRows()
 
     elseif currentView == "auction" then
         money = true
+        local candidates = {}
+        local missing = false
         for id, data in pairs(table_) do
             if type(data) == "table" and (data.count or 0) >= MIN_KILLS
                 and (data.looted or 0) > 0 then
-                local value = MobAuctionValue(id)
-                if value > 0 then
-                    list[#list + 1] = {
-                        name = data.name or ("NPC " .. tostring(id)),
-                        value = value,
-                        count = data.count or 0,
-                    }
+                candidates[#candidates + 1] = { id = id, data = data }
+                for itemID in pairs(data.items or {}) do
+                    local numericID = tonumber(itemID)
+                    if numericID and not ItemInfoReady(numericID) then
+                        missing = true
+                    end
                 end
+            end
+        end
+
+        -- Auctionator needs the item's link for gear prices. If the client is
+        -- still loading item info, wait instead of ranking a partial list that
+        -- would change on the next refresh.
+        if missing then
+            auctionLoadStarted = auctionLoadStarted or GetTime()
+            if GetTime() - auctionLoadStarted < 5 then
+                return list, "Loading auction values...", money, true
+            end
+        else
+            auctionLoadStarted = nil
+        end
+
+        for _, candidate in ipairs(candidates) do
+            local value = MobAuctionValue(candidate.id)
+            if value > 0 then
+                list[#list + 1] = {
+                    name = candidate.data.name or ("NPC " .. tostring(candidate.id)),
+                    value = value,
+                    count = candidate.data.count or 0,
+                }
             end
         end
         note = "Average auction value per kill  ·  min " .. MIN_KILLS .. " kills"
         SortRows(list, function(a, b) return a.value > b.value end)
     end
 
-    return list, note, money
+    return list, note, money, loading
 end
 
 local function GetRow(index)
@@ -183,7 +223,7 @@ local function Refresh()
 
     auctionCache = {}
 
-    local list, note, money = BuildRows()
+    local list, note, money, loading = BuildRows()
     local width = (scroll and scroll:GetWidth()) or 0
     if width < 50 then width = 260 end
     width = width - 26
@@ -221,7 +261,9 @@ local function Refresh()
         emptyLabel:Show()
         local text
         if currentView == "auction" then
-            if not (KKK.HasAuctionator and KKK.HasAuctionator()) then
+            if loading then
+                text = "Loading auction values..."
+            elseif not (KKK.HasAuctionator and KKK.HasAuctionator()) then
                 text = "Auction values need Auctionator installed and scanned."
             else
                 text = "No NPCs with at least " .. MIN_KILLS
@@ -251,6 +293,7 @@ end
 local function SelectView(id)
     if not VIEW_LABEL[id] then return end
     currentView = id
+    if id == "auction" then auctionLoadStarted = nil end
     dropdownLabel:SetText(VIEW_LABEL[id])
     Refresh()
     if scroll then scroll:SetVerticalScroll(0) end
@@ -416,6 +459,34 @@ local function CreatePanel(parent)
 
     return panel
 end
+
+-- Item info arrives asynchronously. Rebuild the auction ranking once the
+-- client has it, throttled so a big loot list doesn't refresh per item.
+local itemEventFrame = CreateFrame("Frame")
+itemEventFrame:Show()
+for _, event in ipairs({ "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT" }) do
+    pcall(itemEventFrame.RegisterEvent, itemEventFrame, event)
+end
+
+local refreshQueued = false
+
+itemEventFrame:SetScript("OnEvent", function(_, _, itemID)
+    if panel and panel:IsShown() and currentView == "auction" then
+        auctionCache = {}
+        refreshQueued = true
+    end
+end)
+
+itemEventFrame:SetScript("OnUpdate", function(self, elapsed)
+    if not refreshQueued then return end
+    self.refreshElapsed = (self.refreshElapsed or 0) + elapsed
+    if self.refreshElapsed < 0.15 then return end
+    self.refreshElapsed = 0
+    refreshQueued = false
+    if panel and panel:IsShown() and currentView == "auction" then
+        Refresh()
+    end
+end)
 
 KKK.KillStats = {
     OnDataChanged = function()

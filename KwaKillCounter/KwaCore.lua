@@ -587,22 +587,20 @@ function KKK.GetAuctionPrice(itemID)
     local numericID = tonumber(itemID)
     if not numericID then return 0 end
 
-    local _, _, itemQuality = GetItemInfo(numericID)
-    if not itemQuality or itemQuality <= 0 then return 0 end
+    local _, link, itemQuality = GetItemInfo(numericID)
 
     local ahPrice = 0
     if KKK.HasAuctionator() then
         local ok, price
         ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemID, "KwaKillCounter", numericID)
-        if (not ok or not price) then
-            local _, link = GetItemInfo(numericID)
-            if link then
-                ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemLink, "KwaKillCounter", link)
-            end
+        if (not ok or not price) and link then
+            ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemLink, "KwaKillCounter", link)
         end
         if ok and price then ahPrice = price end
     end
 
+    -- Quality is only a sanity check, so don't throw away a real Auctionator
+    -- price just because the client hasn't cached the item's info yet.
     if itemQuality == 1 and ahPrice > 100000 then
         ahPrice = 0
     end
