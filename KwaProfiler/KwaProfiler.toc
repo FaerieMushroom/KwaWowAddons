@@ -1,0 +1,6 @@
+## Interface: 16001
+## Title: KwaProfiler (WoW Forever)
+## Notes: Optional per-plugin Lua CPU profiler for Kwa Lite. Disabled by default.
+## Dependencies: KwaLite
+
+KwaProfiler.lua

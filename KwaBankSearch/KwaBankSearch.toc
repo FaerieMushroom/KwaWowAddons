@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: KwaBankSearch (WoW Forever)
+## Notes: Searches cached inventories and banks across all characters.
+## SavedVariables: KwaBankSearchDB
+## Dependencies: KwaLite
+
+KwaBankSearch.lua

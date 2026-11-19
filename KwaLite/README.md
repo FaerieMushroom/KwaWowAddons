@@ -11,7 +11,7 @@ Shared window and minimized-bar framework for Kwa addons on **WoW Forever (16001
 - Each addon that provides a minimized widget has a checkbox at the top of the page: when checked, that addon's compact info appears while the window is minimized.
 - Addons without a minimized widget have no minimized display and no checkbox; their page uses the full panel height.
 - Plugins are ordered by their `priority` value (lowest first); plugins with equal priority keep registration order.
-- Plugins are enabled by default. A plugin can be disabled from the Settings page; disabled plugins are removed from the plugin bar and minimized bar.
+- Plugins are enabled by default. A plugin can set `enabledByDefault = false` to start disabled. A plugin can be disabled from the Settings page; disabled plugins are removed from the plugin bar and minimized bar.
 - A plugin can optionally register a settings panel. The Settings page shows a **Settings** button only for plugins that provide `createSettings`.
 - Each compact entry shows the addon's icon to the left of its text, RuneLite-style.
 - If no addon is checked, the minimized bar only shows the `+` button.
@@ -48,6 +48,8 @@ KwaLite:RegisterAddon({
         local page = CreateFrame("Frame", nil, parent)
         return page
     end,
+    -- Optional: defaults to true. Set false to register the plugin disabled.
+    enabledByDefault = true,
     -- Optional: defaults to true.
     showMinimizedByDefault = true,
 })

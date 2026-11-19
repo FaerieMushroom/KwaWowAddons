@@ -8,7 +8,8 @@ This addon is optional: it only registers itself when **Auctionator** is install
 
 - RuneLite-style item search panel inside Kwa Lite.
 - Search by item name across the items stored in Auctionator's price database.
-- Results are capped at **50 entries** to keep the panel responsive.
+- Results are capped at **50 entries** to keep the panel responsive; the status line reports how many matched in total.
+- Item names that are not yet cached by the client are loaded in the background. The status line shows **Searching** while that happens, and results fill in as names arrive instead of waiting for the whole database.
 - Each row shows the item icon, quality-colored name, and price data:
   - **Value** — the last seen minimum price.
   - **Low** — the lowest price ever seen in the stored history.

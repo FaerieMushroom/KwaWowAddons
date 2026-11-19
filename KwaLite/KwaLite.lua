@@ -598,7 +598,7 @@ function KwaLite:RegisterAddon(config)
         db.showMinimized = config.showMinimizedByDefault ~= false
     end
     if type(db.enabled) ~= "boolean" then
-        db.enabled = true
+        db.enabled = config.enabledByDefault ~= false
     end
 
     if not activeID and db.enabled ~= false then activeID = addon.id end
