@@ -16,6 +16,7 @@ local ADDON_ID = "KwaBankSearch"
 local SEARCH_DEBOUNCE = 0.15
 local ROW_HEIGHT = 28
 local HEADER_HEIGHT = 20
+local INVENTORY_PADDING = 15
 local DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 -- Quality ids: 0 poor, 1 common, 2 uncommon, 3 rare, 4 epic, 5 legendary.
@@ -333,6 +334,14 @@ local function ScanBank(char)
     end
 end
 
+local function ScheduleInventoryScan()
+    if not (C_Timer and C_Timer.After) then return end
+    C_Timer.After(1.0, function()
+        local char = EnsureCharacter()
+        if char then ScanInventory(char) end
+    end)
+end
+
 local function ScheduleScan()
     scanToken = scanToken + 1
     local token = scanToken
@@ -499,6 +508,7 @@ local function BuildSections(parsed)
                 label = CharacterLabel(entry, key) .. " — Inventory",
                 items = entry.bags,
                 own = own,
+                inventory = true,
             }
         end
 
@@ -538,6 +548,8 @@ local function BuildSections(parsed)
                 label = section.label,
                 entries = entries,
                 order = section.order,
+                inventory = section.inventory,
+                own = section.own,
             }
         end
     end
@@ -680,13 +692,18 @@ NS.Refresh = function()
     local shownHeaders = 0
     local shownItems = 0
 
-    for _, section in ipairs(sections) do
+    for sectionIndex, section in ipairs(sections) do
         shownHeaders = shownHeaders + 1
         local header = GetHeaderRow(shownHeaders)
         header:ClearAllPoints()
         header:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
         header:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
-        header.text:SetText("|cff9d9d9d" .. section.label .. "|r")
+        header.text:SetText(section.label)
+        if section.inventory then
+            header.text:SetTextColor(1, 0.75, 0.15, 1)
+        else
+            header.text:SetTextColor(1, 0.75, 0.15, 1)
+        end
         header:Show()
         y = y + HEADER_HEIGHT
 
@@ -706,6 +723,10 @@ NS.Refresh = function()
             row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
             row:Show()
             y = y + ROW_HEIGHT
+        end
+
+        if sectionIndex < #sections then
+            y = y + INVENTORY_PADDING
         end
     end
 
@@ -865,6 +886,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         local char = EnsureCharacter()
         ScanInventory(char)
+        ScheduleInventoryScan()
         if bankOpen then ScanBank(char) end
         if panel and panel:IsShown() then NS.Refresh() end
     elseif event == "BAG_UPDATE_DELAYED" then
@@ -896,7 +918,7 @@ end)
 KwaLite:RegisterAddon({
     id = ADDON_ID,
     name = "Bank Search",
-    icon = "Interface\\Icons\\INV_Misc_Bag_07",
+    icon = "Interface\\Icons\\achievement_guildperk_mobilebanking",
     priority = 8,
     createPanel = CreatePanel,
 })

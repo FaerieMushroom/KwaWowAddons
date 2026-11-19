@@ -48,5 +48,6 @@ bags)".
 - Entries are grouped per character and per location (Inventory or Bank).
 - The checkbox only controls whether your current character's bags are listed.
 - Filters apply to the listed sections; a filter alone needs no name text.
-- The first open scans your bags immediately.
+- The first open scans your bags immediately, and a delayed scan runs after
+  PLAYER_LOGIN / PLAYER_ENTERING_WORLD once the client exposes bag data.
 - Empty sections are not shown.

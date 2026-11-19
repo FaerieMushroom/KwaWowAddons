@@ -573,7 +573,7 @@ end)
 KwaLite:RegisterAddon({
     id = ADDON_ID,
     name = "Profiler",
-    icon = "Interface\\Icons\\INV_Misc_Spyglass_02",
+    icon = "Interface\\Icons\\inv_professions_inscription_scribesmagnifyingglass_gold",
     priority = 7,
     enabledByDefault = false,
     createPanel = CreatePanel,
