@@ -310,11 +310,7 @@ local function CreateItemRow(parent, index)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, -HEADER_HEIGHT - ((index - 1) * ITEM_HEIGHT))
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -6, -HEADER_HEIGHT - ((index - 1) * ITEM_HEIGHT))
 
-    local background = row:CreateTexture(nil, "BACKGROUND")
-    background:SetAllPoints()
-    background:SetColorTexture(1, 1, 1, 0.07)
-    background:Hide()
-    row.background = background
+    row.background = Util.AddRowHoverBackground(row, 0.07)
 
     local icon = row:CreateTexture(nil, "ARTWORK")
     icon:SetSize(13, 13)
@@ -720,23 +716,12 @@ local function CreateContextMenu()
         button:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
         button:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", -1, -((index - 1) * 20 + 4))
 
-        local background = button:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints()
-        background:SetColorTexture(1, 1, 1, 0.08)
-        background:Hide()
-        button.background = background
+        Util.SetHoverBackground(button, 0.08)
 
         local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", button, "LEFT", 8, 0)
         text:SetJustifyH("LEFT")
         button.text = text
-
-        button:SetScript("OnEnter", function(self)
-            self.background:Show()
-        end)
-        button:SetScript("OnLeave", function(self)
-            self.background:Hide()
-        end)
         button:SetScript("OnClick", function(self)
             local action = self.action
             HideContextMenu()
@@ -1053,11 +1038,7 @@ local function CreateModeMenu()
         button:SetPoint("TOPLEFT", modeMenu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
         button:SetPoint("TOPRIGHT", modeMenu, "TOPRIGHT", -1, -((index - 1) * 20 + 4))
 
-        local background = button:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints()
-        background:SetColorTexture(1, 1, 1, 0.08)
-        background:Hide()
-        button.background = background
+        Util.SetHoverBackground(button, 0.08)
 
         local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", button, "LEFT", 8, 0)
@@ -1065,9 +1046,6 @@ local function CreateModeMenu()
         text:SetText(option.label)
         button.text = text
         button.optionID = option.id
-
-        button:SetScript("OnEnter", function(self) self.background:Show() end)
-        button:SetScript("OnLeave", function(self) self.background:Hide() end)
         button:SetScript("OnClick", function(self)
             SetMinimizedMode(self.optionID)
             if modeDropdownLabel then

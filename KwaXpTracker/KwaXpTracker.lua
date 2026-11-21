@@ -225,23 +225,13 @@ local function CreateContextMenu()
         button:SetPoint("TOPLEFT", contextMenu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
         button:SetPoint("TOPRIGHT", contextMenu, "TOPRIGHT", -1, -((index - 1) * 20 + 4))
 
-        local background = button:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints()
-        background:SetColorTexture(1, 1, 1, 0.08)
-        background:Hide()
-        button.background = background
+        Util.SetHoverBackground(button, 0.08)
 
         local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", button, "LEFT", 8, 0)
         text:SetJustifyH("LEFT")
         button.text = text
 
-        button:SetScript("OnEnter", function(self)
-            self.background:Show()
-        end)
-        button:SetScript("OnLeave", function(self)
-            self.background:Hide()
-        end)
         button:SetScript("OnClick", function(self)
             local action = self.action
             HideContextMenu()
@@ -500,7 +490,8 @@ end
 
 InitializePlayerXP()
 
-if KwaLite and KwaLite.RegisterAddon then
+if KwaLite and KwaLite.RegisterAddon and KwaLite.Util then
+    local Util = KwaLite.Util
     KwaLite:RegisterAddon({
         id = "KwaXpTracker",
         name = "XP Tracker",

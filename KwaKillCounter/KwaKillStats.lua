@@ -197,6 +197,7 @@ local function CreateRow(index)
     row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     row.value:SetJustifyH("RIGHT")
     row.value:SetWordWrap(false)
+    Util.AddRowHoverBackground(row)
     return row
 end
 
@@ -208,11 +209,7 @@ local function Refresh()
     auctionCache = {}
 
     local list, note, money, loading = BuildRows()
-    local width = (scroll and scroll:GetWidth()) or 0
-    if width < 50 then width = 260 end
-    width = width - 26
-    if width < 100 then width = 100 end
-    content:SetWidth(width)
+    local width = Util.FitContentWidth(scroll, content, panel, 26, 260)
 
     subtitle:SetText("|cff9d9d9d" .. (note or "") .. "|r")
 
@@ -315,11 +312,7 @@ local function CreateMenu()
         button:SetPoint("TOPLEFT", menu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
         button:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -1, -((index - 1) * 20 + 4))
 
-        local background = button:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints()
-        background:SetColorTexture(1, 1, 1, 0.08)
-        background:Hide()
-        button.background = background
+        Util.AddRowHoverBackground(button, 0.08)
 
         local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", button, "LEFT", 8, 0)
@@ -327,12 +320,7 @@ local function CreateMenu()
         text:SetText(entry.label)
         button.text = text
 
-        button:SetScript("OnEnter", function(self)
-            self.background:Show()
-        end)
-        button:SetScript("OnLeave", function(self)
-            self.background:Hide()
-        end)
+        Util.SetHoverScripts(button)
         button:SetScript("OnClick", function()
             SelectView(entry.id)
             HideMenu()

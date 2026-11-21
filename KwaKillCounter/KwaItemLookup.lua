@@ -363,9 +363,7 @@ local function AcquireBrowseRow(index)
     row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     row.value:SetJustifyH("RIGHT")
 
-    row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints()
-    row.background:SetColorTexture(1, 1, 1, 0.06)
+    row.background = Util.AddRowHoverBackground(row)
     row.background:Hide()
 
     row:SetScript("OnEnter", function(self)
@@ -835,12 +833,6 @@ local function CreateSortMenu()
         button:SetPoint("TOPLEFT", sortMenu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
         button:SetPoint("TOPRIGHT", sortMenu, "TOPRIGHT", -1, -((index - 1) * 20 + 4))
 
-        local background = button:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints()
-        background:SetColorTexture(1, 1, 1, 0.08)
-        background:Hide()
-        button.background = background
-
         local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", button, "LEFT", 8, 0)
         text:SetJustifyH("LEFT")
@@ -848,8 +840,7 @@ local function CreateSortMenu()
         button.text = text
         button.optionID = option.id
 
-        button:SetScript("OnEnter", function(self) self.background:Show() end)
-        button:SetScript("OnLeave", function(self) self.background:Hide() end)
+        Util.SetHoverBackground(button, 0.08)
         button:SetScript("OnClick", function(self)
             SetSortMode(self.optionID)
             HideSortMenu()

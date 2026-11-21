@@ -213,7 +213,7 @@ end
 
 -- Keep a scroll child as wide as its scroll frame minus scrollbar padding.
 function Util.FitContentWidth(scroll, content, panel, padding, fallbackWidth)
-    if not scroll or not content then return end
+    if not scroll or not content then return nil end
     local width = scroll:GetWidth() or 0
     if width < 50 then
         width = (panel and panel:GetWidth()) or fallbackWidth or 220
@@ -221,6 +221,7 @@ function Util.FitContentWidth(scroll, content, panel, padding, fallbackWidth)
     width = width - (padding or 24)
     if width < 100 then width = 100 end
     content:SetWidth(width)
+    return width
 end
 
 -- Show the native item tooltip on owner. Returns true when the client rendered
@@ -249,6 +250,35 @@ function Util.HideTooltip()
     if GameTooltip then GameTooltip:Hide() end
 end
 
+-- A hover-highlight BACKGROUND texture attached to a row, hidden until
+-- OnEnter. Returns the texture for extra tweaks.
+function Util.AddRowHoverBackground(row, alpha, r, g, b)
+    local background = row:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints()
+    background:SetColorTexture(r or 1, g or 1, b or 1, alpha or 0.06)
+    background:Hide()
+    row.background = background
+    return background
+end
+
+-- Attach the standard OnEnter/OnLeave hover scripts to a frame that has a
+-- background attached (usually via AddRowHoverBackground).
+function Util.SetHoverScripts(frame)
+    frame:SetScript("OnEnter", function(self)
+        if self.background then self.background:Show() end
+    end)
+    frame:SetScript("OnLeave", function(self)
+        if self.background then self.background:Hide() end
+    end)
+end
+
+-- Create a hover-highlight BACKGROUND and scripts on one call.
+function Util.SetHoverBackground(frame, alpha)
+    Util.AddRowHoverBackground(frame, alpha)
+    Util.SetHoverScripts(frame)
+    return frame.background
+end
+
 -- A reusable list row: Button frame, highlight, icon and name label.
 --
 -- options:
@@ -272,7 +302,6 @@ function Util.CreateItemRow(parent, options)
     highlight:SetAllPoints()
     highlight:SetColorTexture(1, 1, 1, options.highlightAlpha or 0.06)
     row.highlight = highlight
-
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(iconSize, iconSize)
     row.icon:SetPoint("LEFT", row, "LEFT", options.iconLeft or 1, 0)

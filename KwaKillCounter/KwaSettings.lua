@@ -86,10 +86,8 @@ local function AcquireRow(index)
     row = CreateFrame("Button", nil, content)
     row:SetHeight(ROW_HEIGHT)
 
-    row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints()
-    row.background:SetColorTexture(1, 1, 1, 0.04)
-    row.background:Hide()
+    Util.AddRowHoverBackground(row, 0.04)
+    Util.SetHoverScripts(row)
 
     row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
     row.check:SetSize(20, 20)

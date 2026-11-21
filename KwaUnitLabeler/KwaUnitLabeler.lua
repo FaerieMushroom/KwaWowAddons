@@ -275,10 +275,8 @@ local function CreateRow(index)
     row:SetHeight(ROW_HEIGHT)
     row:EnableMouse(true)
 
-    row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints()
-    row.background:SetColorTexture(1, 1, 1, 0.04)
-    row.background:Hide()
+    row.background = Util.AddRowHoverBackground(row, 0.04)
+    Util.SetHoverScripts(row)
 
     row.edit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
     row.edit:SetHeight(20)
@@ -353,9 +351,6 @@ local function CreateRow(index)
         deleteText:SetTextColor(1, 1, 1)
     end)
 
-    row:SetScript("OnEnter", function(self) self.background:Show() end)
-    row:SetScript("OnLeave", function(self) self.background:Hide() end)
-
     return row
 end
 
@@ -365,9 +360,7 @@ local function Refresh()
     if not content then return end
 
     local db = EnsureDB()
-    local width = (scroll and scroll:GetWidth()) or 0
-    if width < 50 then width = 240 end
-    content:SetWidth(math.max(100, width - 26))
+    local width = Util.FitContentWidth(scroll, content, panel, 26, 240)
 
     local y = 0
     for index, entry in ipairs(db.entries) do
@@ -554,11 +547,7 @@ local function CreateAnchorMenu()
         button:SetPoint("TOPLEFT", anchorMenu, "TOPLEFT", 1, -((index - 1) * 20 + 4))
         button:SetPoint("TOPRIGHT", anchorMenu, "TOPRIGHT", -1, -((index - 1) * 20 + 4))
 
-        local background = button:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints()
-        background:SetColorTexture(1, 1, 1, 0.08)
-        background:Hide()
-        button.background = background
+        Util.SetHoverBackground(button, 0.08)
 
         local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", button, "LEFT", 8, 0)

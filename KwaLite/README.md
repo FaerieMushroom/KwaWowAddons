@@ -31,7 +31,10 @@ should use it instead of copying helpers. It provides:
 - `Util.FormatMoney(copper)` – coin string, preferring `C_CurrencyInfo`.
 - `Util.ColorName(name, quality)` – quality-colored item name.
 - `Util.CreateScrollPanel(panel, options)` – standard scroll frame + scroll child.
-- `Util.FitContentWidth(scroll, content, panel, padding, fallbackWidth)` – resize scroll content.
+- `Util.FitContentWidth(scroll, content, panel, padding, fallbackWidth)` – resize scroll content. Returns the fitted width.
+- `Util.AddRowHoverBackground(row, alpha)` – hover-highlight BACKGROUND texture attached to a row, hidden until OnEnter.
+- `Util.SetHoverScripts(frame)` – attach standard OnEnter/OnLeave show/hide scripts.
+- `Util.SetHoverBackground(frame, alpha)` – create hover background + scripts in one call.
 - `Util.CreateSearchBox(parent, options)` – backdropped search field with placeholder; returns `frame, box, placeholder, updatePlaceholder`.
 - `Util.CreateRowPool(createRow)` – sequential row pool; `Get(index)` creates on demand, `Trim(count[, onHide])` hides extra rows.
 - `Util.CreateItemRow(parent, options)` – shared Button row with highlight/icon/name; caller adds extra columns or scripts.
