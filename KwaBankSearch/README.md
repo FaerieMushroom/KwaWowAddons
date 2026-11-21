@@ -50,4 +50,6 @@ bags)".
 - Filters apply to the listed sections; a filter alone needs no name text.
 - The first open scans your bags immediately, and a delayed scan runs after
   PLAYER_LOGIN / PLAYER_ENTERING_WORLD once the client exposes bag data.
+- Refreshes while the panel is open are throttled to at least 0.25s; the list
+  still updates on bank events and after the search debounce.
 - Empty sections are not shown.

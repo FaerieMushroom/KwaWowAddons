@@ -16,6 +16,7 @@ local Util = KwaLite.Util
 
 local ADDON_ID = "KwaBankSearch"
 local SEARCH_DEBOUNCE = 0.15
+local REFRESH_MIN_INTERVAL = 0.25
 local ROW_HEIGHT = 28
 local HEADER_HEIGHT = 20
 local INVENTORY_PADDING = 15
@@ -67,6 +68,8 @@ local scanToken = 0
 local bankOpen = false
 local requestedItems = {}
 local lastScrollQuery = nil
+local lastRefresh = 0
+local refreshScheduled = false
 
 local function Now()
     if type(time) == "function" then return time() end
@@ -256,6 +259,22 @@ local function ScheduleInventoryScan()
     end)
 end
 
+local function ThrottleRefresh()
+    local now = Now()
+    local delta = REFRESH_MIN_INTERVAL - (now - lastRefresh)
+    if delta > 0 then
+        if not refreshScheduled then
+            refreshScheduled = true
+            C_Timer.After(delta, function()
+                refreshScheduled = false
+                NS.Refresh()
+            end)
+        end
+        return
+    end
+    NS.Refresh()
+end
+
 local function ScheduleScan()
     scanToken = scanToken + 1
     local token = scanToken
@@ -266,7 +285,7 @@ local function ScheduleScan()
         ScanInventory(char)
         if bankOpen then ScanBank(char) end
         if panel and panel:IsShown() then
-            NS.Refresh()
+            ThrottleRefresh()
         end
     end
 
@@ -543,6 +562,7 @@ end
 
 NS.Refresh = function()
     if not content or not searchBox or not statusLabel then return end
+    lastRefresh = Now()
 
     local query = searchBox:GetText() or ""
     local scrollY = 0
@@ -720,12 +740,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
             ScanBank(char)
         end
         bankOpen = false
-        if panel and panel:IsShown() then NS.Refresh() end
+        if panel and panel:IsShown() then ThrottleRefresh() end
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         requestedItems[arg1] = nil
         local db = EnsureDB()
         if db.items[arg1] then EnsureMeta(arg1) end
-        if panel and panel:IsShown() then NS.Refresh() end
+        if panel and panel:IsShown() then ThrottleRefresh() end
     elseif event == "PLAYER_LOGOUT" then
         local char = EnsureCharacter()
         ScanInventory(char)
@@ -739,4 +759,5 @@ KwaLite:RegisterAddon({
     icon = "Interface\\Icons\\achievement_guildperk_mobilebanking",
     priority = 8,
     createPanel = CreatePanel,
+    refresh = NS.Refresh,
 })
