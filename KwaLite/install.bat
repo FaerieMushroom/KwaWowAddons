@@ -5,6 +5,7 @@ if not exist "%DEST_DIR%" (
     mkdir "%DEST_DIR%"
 )
 copy "%~dp0KwaLite.lua" "%DEST_DIR%\"
+copy "%~dp0KwaLiteUtil.lua" "%DEST_DIR%\"
 copy "%~dp0KwaLite.toc" "%DEST_DIR%\"
 
 echo Files copied successfully to %DEST_DIR%

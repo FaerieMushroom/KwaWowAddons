@@ -2,11 +2,22 @@ local addonName, KAT = ...
 
 -- This plugin is optional: it only loads when both KwaLite and Auctionator are
 -- available. OptionalDeps in the .toc makes Auctionator load first when present.
-if not (KwaLite and KwaLite.RegisterAddon) then
+if not (KwaLite and KwaLite.RegisterAddon and KwaLite.Util) then
     return
 end
 if not (Auctionator and Auctionator.API and Auctionator.API.v1) then
     return
+end
+
+local Util = KwaLite.Util
+local SafeCall = Util.SafeCall
+local RequestItemData = Util.RequestItemData
+local ColorName = Util.ColorName
+
+local function FetchItemMeta(itemID)
+    local meta = Util.UpdateItemMeta(itemID)
+    if not meta.name then return nil end
+    return meta
 end
 
 local MAX_RESULTS = 50
@@ -56,97 +67,6 @@ local RunSearch
 local BuildIndex
 local ShowDetail
 local RefreshDetail
-
-local function SafeCall(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    local ok, result = pcall(fn, ...)
-    if ok then return result end
-    return nil
-end
-
-local function GetItemInfoAPI()
-    if C_Item and C_Item.GetItemInfo then return C_Item.GetItemInfo end
-    return GetItemInfo
-end
-
-local function GetItemInfoInstantAPI()
-    if C_Item and C_Item.GetItemInfoInstant then return C_Item.GetItemInfoInstant end
-    return GetItemInfoInstant
-end
-
-local function RequestItemData(itemID)
-    if type(itemID) ~= "number" then return end
-    local request = C_Item and (C_Item.RequestLoadItemDataByID or C_Item.RequestLoadItemData)
-    if type(request) == "function" then
-        pcall(request, itemID)
-        return
-    end
-    if type(_G.RequestLoadItemDataByID) == "function" then
-        pcall(_G.RequestLoadItemDataByID, itemID)
-    end
-end
-
-local function NormalizeIcon(icon)
-    -- 0 is truthy in Lua, and some clients return 0 for "unknown icon".
-    -- Treat it as missing so the next source (or the fallback icon) is used.
-    if type(icon) == "number" then
-        if icon > 0 then return icon end
-        return nil
-    end
-    if type(icon) == "string" and icon ~= "" then
-        local numeric = icon:match("^%d+$")
-        if numeric then
-            local id = tonumber(numeric)
-            if id and id > 0 then return id end
-            return nil
-        end
-        return icon
-    end
-    return nil
-end
-
-local function GetItemIcon(itemID)
-    local getIconByID = C_Item and C_Item.GetItemIconByID
-    if type(getIconByID) == "function" then
-        local ok, icon = pcall(getIconByID, itemID)
-        if ok and NormalizeIcon(icon) then return NormalizeIcon(icon) end
-    end
-
-    if type(_G.GetItemIcon) == "function" then
-        local ok, icon = pcall(_G.GetItemIcon, itemID)
-        if ok and NormalizeIcon(icon) then return NormalizeIcon(icon) end
-    end
-
-    local instant = GetItemInfoInstantAPI()
-    if instant then
-        -- GetItemInfoInstant returns: itemID, itemType, itemSubType,
-        -- itemEquipLoc, icon, classID, subclassID.
-        local ok, _, _, _, _, icon = pcall(instant, itemID)
-        if ok and NormalizeIcon(icon) then return NormalizeIcon(icon) end
-    end
-end
-
-local function FetchItemMeta(itemID)
-    local getInfo = GetItemInfoAPI()
-    if not getInfo then return nil end
-
-    local ok, name, link, quality, _, _, _, _, _, _, texture = pcall(getInfo, itemID)
-    if not ok or not name then return nil end
-
-    local icon = NormalizeIcon(texture)
-    if not icon then
-        icon = GetItemIcon(itemID)
-    end
-
-    local meta = {
-        name = name,
-        nameLower = name:lower(),
-        link = link,
-        quality = quality,
-        icon = icon,
-    }
-    return meta
-end
 
 local function KeyToItemID(key)
     if type(key) == "number" then
@@ -312,25 +232,7 @@ local function GetPriceHistoryData(dbKey)
     return history, entry
 end
 
-local function FormatMoney(copper)
-    copper = math.floor(tonumber(copper) or 0)
-
-    local coinTextureString = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString)
-        or GetCoinTextureString
-    if coinTextureString then
-        local ok, text = pcall(coinTextureString, copper)
-        if ok and text then return text end
-    end
-
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor((copper % 10000) / 100)
-    local cop = copper % 100
-    local parts = {}
-    if gold > 0 then parts[#parts + 1] = gold .. "g" end
-    if silver > 0 then parts[#parts + 1] = silver .. "s" end
-    if cop > 0 or #parts == 0 then parts[#parts + 1] = cop .. "c" end
-    return table.concat(parts, " ")
-end
+local FormatMoney = Util.FormatMoney
 
 local function FormatPrice(price)
     if type(price) ~= "number" then return "|cff9d9d9d--|r" end
@@ -469,29 +371,12 @@ local function DrawGraph(history)
     SetGraphLabel(graphLabels.lastDate, tostring(history[#history].date or ""))
 end
 
-local function ColorName(name, quality)
-    local qualityColor = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality or 1]
-    local color = qualityColor and qualityColor.color
-    if color and color.WrapTextInColorCode then
-        local ok, text = pcall(color.WrapTextInColorCode, color, name)
-        if ok and text then return text end
-    end
-    return name
-end
-
 local function SetLabel(fontString, label, value)
     fontString:SetText("|cff9d9d9d" .. label .. ":|r " .. FormatPrice(value))
 end
 
 local function UpdateContentWidth()
-    if not scroll or not content then return end
-    local width = scroll:GetWidth() or 0
-    if width < 50 then
-        width = (panel and panel:GetWidth()) or 220
-    end
-    width = width - 24
-    if width < 100 then width = 100 end
-    content:SetWidth(width)
+    Util.FitContentWidth(scroll, content, panel, 24, 220)
 end
 
 local function CreateDetailPage()
@@ -529,7 +414,7 @@ local function CreateDetailPage()
     detailIcon = header:CreateTexture(nil, "ARTWORK")
     detailIcon:SetSize(30, 30)
     detailIcon:SetPoint("TOPLEFT", header, "TOPLEFT", 28, -2)
-    detailIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    detailIcon:SetTexture(Util.DEFAULT_ICON)
     detailIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     detailName = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -713,7 +598,7 @@ RefreshDetail = function()
     if not detailFrame or not selectedItemID then return end
 
     local meta = itemMeta[selectedItemID]
-    detailIcon:SetTexture((meta and meta.icon) or "Interface\\Icons\\INV_Misc_QuestionMark")
+    detailIcon:SetTexture((meta and meta.icon) or Util.DEFAULT_ICON)
     detailName:SetText(meta and ColorName(meta.name, meta.quality) or ("Item " .. tostring(selectedItemID)))
 
     local dbKey = itemKey[selectedItemID]
@@ -758,7 +643,7 @@ local function CreateRow(parent, index)
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(30, 30)
     row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -2)
-    row.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    row.icon:SetTexture(Util.DEFAULT_ICON)
     row.icon:SetAlpha(1)
     row.icon:Show()
 
@@ -791,27 +676,13 @@ local function CreateRow(parent, index)
 
     row:SetScript("OnEnter", function(self)
         if not self.itemID then return end
-
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local meta = itemMeta[self.itemID]
-        local shown = false
-
-        if meta and meta.link then
-            local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, meta.link)
-            shown = ok
-        end
-        if not shown and GameTooltip.SetItemByID then
-            local ok = pcall(GameTooltip.SetItemByID, GameTooltip, self.itemID)
-            shown = ok
-        end
-        if not shown then
-            pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. self.itemID)
-        end
+        Util.ShowItemTooltip(self, self.itemID, meta and meta.link)
         GameTooltip:Show()
     end)
 
     row:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        Util.HideTooltip()
     end)
 
     row:SetScript("OnClick", function(self)
@@ -853,7 +724,7 @@ local function ShowResults(results, totalMatches)
 
             row = row or GetRow(index)
             row.itemID = itemID
-            row.icon:SetTexture((meta and meta.icon) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            row.icon:SetTexture((meta and meta.icon) or Util.DEFAULT_ICON)
             row.icon:SetAlpha(1)
             row.icon:Show()
             row.name:SetText(meta and ColorName(meta.name, meta.quality) or "Unknown item")
@@ -1044,19 +915,7 @@ CreatePanel = function(parent)
     statusLabel:SetJustifyH("LEFT")
     statusLabel:SetText("|cff9d9d9dType to search Auctionator prices|r")
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -41)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -14)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(200)
-    content:SetHeight(1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, { top = 41 })
 
     CreateDetailPage()
 

@@ -8,16 +8,20 @@ local addonName, NS = ...
 -- snapshots come from SavedVariables, so their data is as fresh as the last
 -- time that character logged in / opened their bank.
 
-if not (KwaLite and KwaLite.RegisterAddon) then
+if not (KwaLite and KwaLite.RegisterAddon and KwaLite.Util) then
     return
 end
+
+local Util = KwaLite.Util
 
 local ADDON_ID = "KwaBankSearch"
 local SEARCH_DEBOUNCE = 0.15
 local ROW_HEIGHT = 28
 local HEADER_HEIGHT = 20
 local INVENTORY_PADDING = 15
-local DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local DEFAULT_ICON = Util.DEFAULT_ICON
+local NormalizeIcon = Util.NormalizeIcon
+local ColorName = Util.ColorName
 
 -- Quality ids: 0 poor, 1 common, 2 uncommon, 3 rare, 4 epic, 5 legendary.
 local RARITY_ALIASES = {
@@ -71,13 +75,6 @@ local function Now()
     return 0
 end
 
-local function SafeCall(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    local ok, result = pcall(fn, ...)
-    if ok then return result end
-    return nil
-end
-
 local function EnsureDB()
     if type(KwaBankSearchDB) ~= "table" then
         KwaBankSearchDB = {}
@@ -94,33 +91,6 @@ local function EnsureDB()
     end
     if type(db.showInventory) ~= "boolean" then db.showInventory = true end
     return db
-end
-
-local function NormalizeIcon(icon)
-    if type(icon) == "number" then
-        if icon > 0 then return icon end
-        return nil
-    end
-    if type(icon) == "string" and icon ~= "" then
-        local numeric = icon:match("^%d+$")
-        if numeric then
-            local id = tonumber(numeric)
-            if id and id > 0 then return id end
-            return nil
-        end
-        return icon
-    end
-    return nil
-end
-
-local function GetItemInfoAPI()
-    if C_Item and C_Item.GetItemInfo then return C_Item.GetItemInfo end
-    return GetItemInfo
-end
-
-local function GetItemInfoInstantAPI()
-    if C_Item and C_Item.GetItemInfoInstant then return C_Item.GetItemInfoInstant end
-    return GetItemInfoInstant
 end
 
 local function GetContainerNumSlots(bag)
@@ -157,15 +127,7 @@ end
 local function RequestItemData(itemID)
     if type(itemID) ~= "number" or requestedItems[itemID] then return end
     requestedItems[itemID] = true
-
-    local request = C_Item and (C_Item.RequestLoadItemDataByID or C_Item.RequestLoadItemData)
-    if type(request) == "function" then
-        pcall(request, itemID)
-        return
-    end
-    if type(_G.RequestLoadItemDataByID) == "function" then
-        pcall(_G.RequestLoadItemDataByID, itemID)
-    end
+    Util.RequestItemData(itemID)
 end
 
 local function EnsureMeta(itemID, fallbackQuality, fallbackIcon, fallbackLink)
@@ -180,53 +142,7 @@ local function EnsureMeta(itemID, fallbackQuality, fallbackIcon, fallbackLink)
     if meta.icon == nil and fallbackIcon ~= nil then meta.icon = NormalizeIcon(fallbackIcon) end
     if (meta.link == nil or meta.link == "") and fallbackLink then meta.link = fallbackLink end
 
-    if not meta.name then
-        local getInfo = GetItemInfoAPI()
-        if type(getInfo) == "function" then
-            local ok, name, link, quality, _, _, class, subclass, _,
-                _, texture, _, classID, subclassID = pcall(getInfo, itemID)
-            if ok and name then
-                meta.name = name
-                meta.nameLower = name:lower()
-                meta.link = link or meta.link
-                if quality ~= nil then meta.quality = quality end
-                meta.icon = NormalizeIcon(texture) or meta.icon
-                if class then meta.class = class end
-                if classID then meta.classID = classID end
-                if subclass then meta.subclass = subclass end
-                if subclassID then meta.subclassID = subclassID end
-            end
-        end
-    end
-
-    if not meta.classID then
-        local instant = GetItemInfoInstantAPI()
-        if type(instant) == "function" then
-            local ok, _, itemType, itemSubType, _, icon, classID, subclassID = pcall(instant, itemID)
-            if ok then
-                meta.class = meta.class or itemType
-                meta.subclass = meta.subclass or itemSubType
-                meta.classID = meta.classID or classID
-                meta.subclassID = meta.subclassID or subclassID
-                meta.icon = meta.icon or NormalizeIcon(icon)
-            end
-        end
-    end
-
-    if not meta.icon then
-        local getIcon = C_Item and C_Item.GetItemIconByID
-        if type(getIcon) == "function" then
-            meta.icon = NormalizeIcon(SafeCall(getIcon, itemID))
-        end
-    end
-
-    if not meta.name and type(meta.link) == "string" then
-        local name = meta.link:match("%[(.-)%]")
-        if name and name ~= "" then
-            meta.name = name
-            meta.nameLower = name:lower()
-        end
-    end
+    Util.UpdateItemMeta(itemID, meta)
 
     if not meta.name then
         RequestItemData(itemID)
@@ -557,23 +473,8 @@ local function BuildSections(parsed)
     return results
 end
 
-local function ColorName(name, quality)
-    local qualityColor = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality or 1]
-    local color = qualityColor and qualityColor.color
-    if color and color.WrapTextInColorCode then
-        local ok, text = pcall(color.WrapTextInColorCode, color, name)
-        if ok and text then return text end
-    end
-    return name
-end
-
 local function UpdateContentWidth()
-    if not scroll or not content then return end
-    local width = scroll:GetWidth() or 0
-    if width < 50 then
-        width = (panel and panel:GetWidth()) or 220
-    end
-    content:SetWidth(math.max(100, width - 26))
+    Util.FitContentWidth(scroll, content, panel, 26, 220)
 end
 
 local function UpdatePlaceholder()
@@ -629,16 +530,7 @@ local function CreateItemRow(index)
         local db = EnsureDB()
         local meta = db.items[self.itemID] or EnsureMeta(self.itemID)
 
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:ClearLines()
-
-        local shown = false
-        if meta and type(meta.link) == "string" and meta.link ~= "" then
-            shown = pcall(GameTooltip.SetHyperlink, GameTooltip, meta.link)
-        end
-        if not shown and type(GameTooltip.SetItemByID) == "function" then
-            shown = pcall(GameTooltip.SetItemByID, GameTooltip, self.itemID)
-        end
+        local shown = Util.ShowItemTooltip(self, self.itemID, meta and meta.link)
         if not shown then
             GameTooltip:AddLine(meta and meta.name or ("Item " .. tostring(self.itemID)), 1, 0.82, 0)
             GameTooltip:AddLine("Item ID: " .. tostring(self.itemID), 1, 1, 1)
@@ -647,7 +539,7 @@ local function CreateItemRow(index)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        Util.HideTooltip()
     end)
 
     row:SetScript("OnClick", function(self)
@@ -844,19 +736,7 @@ local function CreatePanel(parent)
     statusLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -1, -47)
     statusLabel:SetJustifyH("LEFT")
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -64)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -14)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(200)
-    content:SetHeight(1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, { top = 64 })
 
     showInventoryCheck:SetChecked(EnsureDB().showInventory)
 

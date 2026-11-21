@@ -4,9 +4,11 @@ local addonName, KKK = ...
 -- so it can be enabled/disabled and, when a plugin provides one, opens that
 -- plugin's settings panel.
 
-if not (KwaLite and KwaLite.RegisterAddon and KwaLite.GetAddons) then
+if not (KwaLite and KwaLite.RegisterAddon and KwaLite.GetAddons and KwaLite.Util) then
     return
 end
+
+local Util = KwaLite.Util
 
 local ADDON_ID = "KwaSettings"
 local ROW_HEIGHT = 24
@@ -243,19 +245,7 @@ local function CreatePanel(parent)
         self:ClearFocus()
     end)
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -26)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -14)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(200)
-    content:SetHeight(1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, { top = 26 })
 
     emptyLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     emptyLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 2, -30)

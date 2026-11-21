@@ -1,7 +1,9 @@
 local addonName, KKK = ...
 
+local Util = KwaLite and KwaLite.Util
+if not Util then return end
+
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-local GetCoinTextureString = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
 
 local Tracker = {}
 KKK.Tracker = Tracker
@@ -115,32 +117,8 @@ local function LoadMerges()
     end
 end
 
-local function FormatMoney(copper)
-    copper = math.floor(tonumber(copper) or 0)
-    if GetCoinTextureString then
-        local ok, text = pcall(GetCoinTextureString, copper)
-        if ok and text then return text end
-    end
-
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor((copper % 10000) / 100)
-    local cop = copper % 100
-    local parts = {}
-    if gold > 0 then parts[#parts + 1] = gold .. "g" end
-    if silver > 0 then parts[#parts + 1] = silver .. "s" end
-    if cop > 0 or #parts == 0 then parts[#parts + 1] = cop .. "c" end
-    return table.concat(parts, " ")
-end
-
-local function ColorItemName(name, quality)
-    local qualityColor = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality or 1]
-    local color = qualityColor and qualityColor.color
-    if color and color.WrapTextInColorCode then
-        local ok, text = pcall(color.WrapTextInColorCode, color, name)
-        if ok and text then return text end
-    end
-    return name
-end
+local FormatMoney = Util.FormatMoney
+local ColorItemName = Util.ColorName
 
 local function AuctionFor(itemID)
     local key = tostring(itemID)
@@ -1006,18 +984,12 @@ local function CreatePanel(parent)
     totalsAuctionLabel:SetJustifyH("LEFT")
     totalsAuctionLabel:SetWordWrap(false)
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -56)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 22)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -16)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 16)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(FRAME_WIDTH - 38, 1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, {
+        top = 56,
+        bottom = 22,
+        barInset = 16,
+        contentWidth = FRAME_WIDTH - 38,
+    })
 
     emptyLabel = content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     emptyLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 6, -6)

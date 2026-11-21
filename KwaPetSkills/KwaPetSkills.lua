@@ -2,9 +2,11 @@ local addonName, KPS = ...
 
 -- Optional plugin: it only registers for hunters, and only when KwaLite is
 -- installed. The hardcoded ability data lives in KwaPetSkillsData.lua.
-if not (KwaLite and KwaLite.RegisterAddon) then
+if not (KwaLite and KwaLite.RegisterAddon and KwaLite.Util) then
     return
 end
+
+local Util = KwaLite.Util
 
 local SECTION_ROW = 20
 local ABILITY_ROW = 34
@@ -435,14 +437,7 @@ local function ShowAbilityTooltip(frame, ability, rank, refresh)
 end
 
 local function UpdateContentWidth()
-    if not scroll or not content then return end
-    local width = scroll:GetWidth() or 0
-    if width < 50 then
-        width = (panel and panel:GetWidth()) or 240
-    end
-    width = width - 24
-    if width < 100 then width = 100 end
-    content:SetWidth(width)
+    Util.FitContentWidth(scroll, content, panel, 24, 240)
 end
 
 local function ResetRows()
@@ -657,19 +652,7 @@ AddonPanel = function(parent)
     checkLabel:SetPoint("RIGHT", showUnlearnableCheck, "LEFT", -2, 0)
     checkLabel:SetText("Show unlearnable")
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -24)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -14)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(200)
-    content:SetHeight(1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, { top = 24 })
 
     panel:SetScript("OnShow", function()
         RefreshPanel()

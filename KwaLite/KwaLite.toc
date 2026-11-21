@@ -3,4 +3,5 @@
 ## Notes: Shared window and minimized-bar framework for Kwa addons.
 ## SavedVariables: KwaLiteDB
 
+KwaLiteUtil.lua
 KwaLite.lua

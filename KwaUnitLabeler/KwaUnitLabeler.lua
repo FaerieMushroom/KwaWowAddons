@@ -7,11 +7,13 @@ local addonName, NS = ...
 -- Friendly NPC nameplates only appear when the client is configured to show
 -- them, and friendly plates inside instances are protected from addons.
 
-if not (KwaLite and KwaLite.RegisterAddon) then
+if not (KwaLite and KwaLite.RegisterAddon and KwaLite.Util) then
     return
 end
 
-local DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local Util = KwaLite.Util
+
+local DEFAULT_ICON = Util.DEFAULT_ICON
 local ROW_HEIGHT = 26
 local DEFAULT_ICON_SIZE = 18
 local ICON_SIZE_MIN = 10
@@ -720,19 +722,7 @@ local function CreatePanel(parent)
     hint:SetPoint("LEFT", addButton, "RIGHT", 6, 0)
     hint:SetText("Type a first or full name, then pick an icon")
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -26)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -14)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(200)
-    content:SetHeight(1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, { top = 26 })
 
     emptyLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     emptyLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 2, -34)

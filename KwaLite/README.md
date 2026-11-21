@@ -17,6 +17,28 @@ Shared window and minimized-bar framework for Kwa addons on **WoW Forever (16001
 - If no addon is checked, the minimized bar only shows the `+` button.
 - The close button is intentionally omitted. Right-click the title bar or minimized bar and choose **Close Kwa**.
 
+## Shared helpers
+
+`KwaLite/KwaLiteUtil.lua` loads before the window and exposes `KwaLite.Util`. Plugins
+should use it instead of copying helpers. It provides:
+
+- `Util.DEFAULT_ICON` – fallback texture path.
+- `Util.SafeCall(fn, ...)` – pcall wrapper returning the first result or `nil`.
+- `Util.NormalizeIcon(icon)` – treats `0`/`""`/numeric strings as missing.
+- `Util.GetItemInfoAPI()`, `Util.GetItemInfoInstantAPI()`, `Util.GetItemIcon(id)`.
+- `Util.RequestItemData(id)` – asks the client to load item data.
+- `Util.UpdateItemMeta(id, meta)` – fills name/link/quality/icon/class fields in place.
+- `Util.FormatMoney(copper)` – coin string, preferring `C_CurrencyInfo`.
+- `Util.ColorName(name, quality)` – quality-colored item name.
+- `Util.CreateScrollPanel(panel, options)` – standard scroll frame + scroll child.
+- `Util.FitContentWidth(scroll, content, panel, padding, fallbackWidth)` – resize scroll content.
+- `Util.ShowItemTooltip(owner, id, link)` / `Util.HideTooltip()`.
+
+```lua
+local Util = KwaLite.Util
+local scroll, content = Util.CreateScrollPanel(panel, { top = 40 })
+```
+
 ## API
 
 ```lua

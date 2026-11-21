@@ -1,11 +1,13 @@
 local addonName, KKK = ...
 
+local Util = KwaLite and KwaLite.Util
+if not Util then return end
+
 -- Item Lookup plugin: browses every item seen in loot, its drop sources and
 -- drop rates, its vendor/auction value, and any known crafting recipes that
 -- make or use it.
 
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-local GetCoinTextureString = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
 
 local RECIPE_VERSION = 1
 local ROW_HEIGHT = 20
@@ -78,19 +80,7 @@ end
 local function FormatMoney(copper)
     copper = math.floor(tonumber(copper) or 0)
     if copper <= 0 then return "0c" end
-    if GetCoinTextureString then
-        local ok, text = pcall(GetCoinTextureString, copper)
-        if ok and text then return text end
-    end
-
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor((copper % 10000) / 100)
-    local cop = copper % 100
-    local parts = {}
-    if gold > 0 then parts[#parts + 1] = gold .. "g" end
-    if silver > 0 then parts[#parts + 1] = silver .. "s" end
-    if cop > 0 or #parts == 0 then parts[#parts + 1] = cop .. "c" end
-    return table.concat(parts, " ")
+    return Util.FormatMoney(copper)
 end
 
 local function ItemData(itemID)
@@ -133,17 +123,10 @@ local function IconFor(data)
     if data and data.texture and data.texture ~= "" and data.texture ~= 0 then
         return data.texture
     end
-    return "Interface\\Icons\\INV_Misc_QuestionMark"
+    return Util.DEFAULT_ICON
 end
 
-local function ColoredName(name, quality)
-    local color = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality or 1]
-    if color and color.color and color.color.WrapTextInColorCode then
-        local ok, text = pcall(color.color.WrapTextInColorCode, color.color, name)
-        if ok and text then return text end
-    end
-    return name
-end
+local ColoredName = Util.ColorName
 
 -- Item index from the recorded loot table -------------------------------------
 
@@ -1002,22 +985,10 @@ local function CreatePanel(parent)
         self:ClearFocus()
     end)
 
-    browseScroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    browseScroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -52)
-    browseScroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
+    browseScroll, browseContent = Util.CreateScrollPanel(panel, { top = 52 })
     browseScroll:SetScript("OnVerticalScroll", function()
         RenderBrowseWindow()
     end)
-    if browseScroll.ScrollBar then
-        browseScroll.ScrollBar:ClearAllPoints()
-        browseScroll.ScrollBar:SetPoint("TOPRIGHT", browseScroll, "TOPRIGHT", -2, -14)
-        browseScroll.ScrollBar:SetPoint("BOTTOMRIGHT", browseScroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    browseContent = CreateFrame("Frame", nil, browseScroll)
-    browseContent:SetWidth(200)
-    browseContent:SetHeight(1)
-    browseScroll:SetScrollChild(browseContent)
 
     browseEmpty = browseContent:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     browseEmpty:SetPoint("TOPLEFT", browseContent, "TOPLEFT", 2, -2)
@@ -1107,19 +1078,7 @@ local function CreatePanel(parent)
         tabButtons[index] = button
     end
 
-    detailScroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    detailScroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -72)
-    detailScroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if detailScroll.ScrollBar then
-        detailScroll.ScrollBar:ClearAllPoints()
-        detailScroll.ScrollBar:SetPoint("TOPRIGHT", detailScroll, "TOPRIGHT", -2, -14)
-        detailScroll.ScrollBar:SetPoint("BOTTOMRIGHT", detailScroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    detailContent = CreateFrame("Frame", nil, detailScroll)
-    detailContent:SetWidth(200)
-    detailContent:SetHeight(1)
-    detailScroll:SetScrollChild(detailContent)
+    detailScroll, detailContent = Util.CreateScrollPanel(panel, { top = 72 })
 
     detailEmpty = detailContent:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     detailEmpty:SetPoint("TOPLEFT", detailContent, "TOPLEFT", 2, -2)

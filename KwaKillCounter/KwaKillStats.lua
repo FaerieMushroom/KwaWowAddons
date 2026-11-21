@@ -1,9 +1,11 @@
 local addonName, KKK = ...
 
+local Util = KwaLite and KwaLite.Util
+if not Util then return end
+
 -- Panel version of the /kwakills, /kwaracekills, /kwatopvendor and
 -- /kwatopauction commands. Registers as a separate KwaLite plugin.
 
-local GetCoinTextureString = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
 local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 
 local ROW_HEIGHT = 18
@@ -38,22 +40,7 @@ for _, entry in ipairs(VIEWS) do
     VIEW_LABEL[entry.id] = entry.label
 end
 
-local function FormatMoney(copper)
-    copper = math.floor(tonumber(copper) or 0)
-    if GetCoinTextureString then
-        local ok, text = pcall(GetCoinTextureString, copper)
-        if ok and text then return text end
-    end
-
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor((copper % 10000) / 100)
-    local cop = copper % 100
-    local parts = {}
-    if gold > 0 then parts[#parts + 1] = gold .. "g" end
-    if silver > 0 then parts[#parts + 1] = silver .. "s" end
-    if cop > 0 or #parts == 0 then parts[#parts + 1] = cop .. "c" end
-    return table.concat(parts, " ")
-end
+local FormatMoney = Util.FormatMoney
 
 local function AuctionFor(itemID)
     local key = tostring(itemID)
@@ -432,19 +419,7 @@ local function CreatePanel(parent)
     subtitle:SetJustifyH("LEFT")
     subtitle:SetWordWrap(false)
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -46)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -14)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(200)
-    content:SetHeight(1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, { top = 46 })
 
     emptyLabel = content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     emptyLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 2, -2)

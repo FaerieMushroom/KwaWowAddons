@@ -10,9 +10,11 @@ local addonName, KP = ...
 -- 5 seconds. Instrumentation only adds a few debugprofilestop calls per
 -- callback while active.
 
-if not (KwaLite and KwaLite.RegisterAddon and KwaLite.GetAddons) then
+if not (KwaLite and KwaLite.RegisterAddon and KwaLite.GetAddons and KwaLite.Util) then
     return
 end
+
+local Util = KwaLite.Util
 
 local ADDON_ID = "KwaProfiler"
 local KWALITE_OWNER = "KwaLite"
@@ -521,19 +523,7 @@ local function CreatePanel(parent)
     statusLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -1, -19)
     statusLabel:SetJustifyH("LEFT")
 
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -37)
-    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 0)
-    if scroll.ScrollBar then
-        scroll.ScrollBar:ClearAllPoints()
-        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -14)
-        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, 14)
-    end
-
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetWidth(200)
-    content:SetHeight(1)
-    scroll:SetScrollChild(content)
+    scroll, content = Util.CreateScrollPanel(panel, { top = 37 })
 
     panel:SetScript("OnShow", function()
         Render()

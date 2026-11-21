@@ -1,0 +1,252 @@
+local addonName, KwaLite = ...
+
+-- Shared helpers for Kwa plugins.
+--
+-- Everything here is deliberately client-agnostic: optional APIs are probed at
+-- call time and every potentially missing global is guarded. Keep the hot paths
+-- allocation-light; these functions run inside list rendering loops.
+
+local Util = KwaLite.Util or {}
+KwaLite.Util = Util
+
+Util.DEFAULT_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+-- Run fn(...) and swallow errors. Returns the first result, or nil.
+function Util.SafeCall(fn, ...)
+    if type(fn) ~= "function" then return nil end
+    local ok, result = pcall(fn, ...)
+    if ok then return result end
+    return nil
+end
+
+-- 0 is truthy in Lua and numeric-string icon IDs show up on some clients.
+-- Normalize both to nil so callers can fall through to another source.
+function Util.NormalizeIcon(icon)
+    if type(icon) == "number" then
+        if icon > 0 then return icon end
+        return nil
+    end
+    if type(icon) == "string" and icon ~= "" then
+        local numeric = icon:match("^%d+$")
+        if numeric then
+            local id = tonumber(numeric)
+            if id and id > 0 then return id end
+            return nil
+        end
+        return icon
+    end
+    return nil
+end
+
+function Util.GetItemInfoAPI()
+    if C_Item and C_Item.GetItemInfo then return C_Item.GetItemInfo end
+    return _G.GetItemInfo
+end
+
+function Util.GetItemInfoInstantAPI()
+    if C_Item and C_Item.GetItemInfoInstant then return C_Item.GetItemInfoInstant end
+    return _G.GetItemInfoInstant
+end
+
+function Util.RequestItemData(itemID)
+    if type(itemID) ~= "number" then return end
+    local request = C_Item and (C_Item.RequestLoadItemDataByID or C_Item.RequestLoadItemData)
+    if type(request) == "function" then
+        pcall(request, itemID)
+        return
+    end
+    if type(_G.RequestLoadItemDataByID) == "function" then
+        pcall(_G.RequestLoadItemDataByID, itemID)
+    end
+end
+
+-- Resolve an item icon from whichever API this client exposes.
+function Util.GetItemIcon(itemID)
+    local normalize = Util.NormalizeIcon
+
+    local getIconByID = C_Item and C_Item.GetItemIconByID
+    if type(getIconByID) == "function" then
+        local ok, icon = pcall(getIconByID, itemID)
+        if ok and normalize(icon) then return normalize(icon) end
+    end
+
+    if type(_G.GetItemIcon) == "function" then
+        local ok, icon = pcall(_G.GetItemIcon, itemID)
+        if ok and normalize(icon) then return normalize(icon) end
+    end
+
+    local instant = Util.GetItemInfoInstantAPI()
+    if instant then
+        -- GetItemInfoInstant: itemID, itemType, itemSubType, itemEquipLoc,
+        -- icon, classID, subclassID.
+        local ok, _, _, _, _, icon = pcall(instant, itemID)
+        if ok and normalize(icon) then return normalize(icon) end
+    end
+    return nil
+end
+
+-- Fill in (or refresh) item metadata in place. Cheap to call repeatedly: each
+-- field is only queried while missing. Returns meta.
+function Util.UpdateItemMeta(itemID, meta)
+    meta = meta or {}
+
+    if not meta.name then
+        local getInfo = Util.GetItemInfoAPI()
+        if type(getInfo) == "function" then
+            local ok, name, link, quality, _, _, class, subclass, _,
+                _, texture, _, classID, subclassID = pcall(getInfo, itemID)
+            if ok and name then
+                meta.name = name
+                meta.nameLower = name:lower()
+                meta.link = link or meta.link
+                if quality ~= nil then meta.quality = quality end
+                meta.icon = Util.NormalizeIcon(texture) or meta.icon
+                if class then meta.class = class end
+                if classID then meta.classID = classID end
+                if subclass then meta.subclass = subclass end
+                if subclassID then meta.subclassID = subclassID end
+            end
+        end
+    end
+
+    if not meta.classID then
+        local instant = Util.GetItemInfoInstantAPI()
+        if type(instant) == "function" then
+            local ok, _, itemType, itemSubType, _, icon, classID, subclassID =
+                pcall(instant, itemID)
+            if ok then
+                meta.class = meta.class or itemType
+                meta.subclass = meta.subclass or itemSubType
+                meta.classID = meta.classID or classID
+                meta.subclassID = meta.subclassID or subclassID
+                meta.icon = meta.icon or Util.NormalizeIcon(icon)
+            end
+        end
+    end
+
+    if not meta.icon then
+        meta.icon = Util.GetItemIcon(itemID)
+    end
+
+    -- Last resort: the item link still contains the display name.
+    if not meta.name and type(meta.link) == "string" then
+        local name = meta.link:match("%[(.-)%]")
+        if name and name ~= "" then
+            meta.name = name
+            meta.nameLower = name:lower()
+        end
+    end
+
+    return meta
+end
+
+local function CoinTextureString(copper)
+    local api = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString)
+        or _G.GetCoinTextureString
+    if type(api) == "function" then
+        local ok, text = pcall(api, copper)
+        if ok and text then return text end
+    end
+    return nil
+end
+
+-- Format copper as a coin string, preferring the client's texture markup.
+function Util.FormatMoney(copper)
+    copper = math.floor(tonumber(copper) or 0)
+
+    local text = CoinTextureString(copper)
+    if text then return text end
+
+    local gold = math.floor(copper / 10000)
+    local silver = math.floor((copper % 10000) / 100)
+    local cop = copper % 100
+    local parts = {}
+    if gold > 0 then parts[#parts + 1] = gold .. "g" end
+    if silver > 0 then parts[#parts + 1] = silver .. "s" end
+    if cop > 0 or #parts == 0 then parts[#parts + 1] = cop .. "c" end
+    return table.concat(parts, " ")
+end
+
+-- Wrap an item name in its quality color when the client provides one.
+function Util.ColorName(name, quality)
+    local qualityColor = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality or 1]
+    local color = qualityColor and qualityColor.color
+    if color and color.WrapTextInColorCode then
+        local ok, text = pcall(color.WrapTextInColorCode, color, name)
+        if ok and text then return text end
+    end
+    return name
+end
+
+-- Create a standard plugin scroll frame plus its scroll child.
+--
+-- options:
+--   top           pixels below the panel top (default 0)
+--   bottom        pixels above the panel bottom (default 0)
+--   barInset      vertical inset of the scrollbar (default 14)
+--   contentWidth  initial scroll-child width (default 200; refreshed by callers)
+function Util.CreateScrollPanel(panel, options)
+    options = options or {}
+    local top = options.top or 0
+    local bottom = options.bottom or 0
+    local barInset = options.barInset or 14
+    local contentWidth = options.contentWidth or 200
+
+    local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -top)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, bottom)
+
+    -- Move the scrollbar inward so it does not overlap content.
+    if scroll.ScrollBar then
+        scroll.ScrollBar:ClearAllPoints()
+        scroll.ScrollBar:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -2, -barInset)
+        scroll.ScrollBar:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", -2, barInset)
+    end
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetWidth(contentWidth)
+    content:SetHeight(1)
+    scroll:SetScrollChild(content)
+
+    return scroll, content
+end
+
+-- Keep a scroll child as wide as its scroll frame minus scrollbar padding.
+function Util.FitContentWidth(scroll, content, panel, padding, fallbackWidth)
+    if not scroll or not content then return end
+    local width = scroll:GetWidth() or 0
+    if width < 50 then
+        width = (panel and panel:GetWidth()) or fallbackWidth or 220
+    end
+    width = width - (padding or 24)
+    if width < 100 then width = 100 end
+    content:SetWidth(width)
+end
+
+-- Show the native item tooltip on owner. Returns true when the client rendered
+-- a real item tooltip. Callers add their own extra lines afterwards.
+function Util.ShowItemTooltip(owner, itemID, link)
+    if not (GameTooltip and owner) then return false end
+
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:ClearLines()
+
+    local shown = false
+    if type(link) == "string" and link ~= "" then
+        shown = pcall(GameTooltip.SetHyperlink, GameTooltip, link)
+    end
+    if not shown and type(itemID) == "number"
+        and type(GameTooltip.SetItemByID) == "function" then
+        shown = pcall(GameTooltip.SetItemByID, GameTooltip, itemID)
+    end
+    if not shown and type(itemID) == "number" then
+        shown = pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. itemID)
+    end
+    return shown and true or false
+end
+
+function Util.HideTooltip()
+    if GameTooltip then GameTooltip:Hide() end
+end
+
+return Util

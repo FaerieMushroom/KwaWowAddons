@@ -1,5 +1,7 @@
 local addonName, KwaLite = ...
 
+local Util = KwaLite.Util
+
 _G.KwaLite = KwaLite
 
 local FRAME_WIDTH = 308
@@ -184,7 +186,7 @@ local function GetMinimizedIcon(addon)
         addon.minimizedIcon = icon
     end
     if icon then
-        icon:SetTexture(addon.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        icon:SetTexture(addon.icon or Util.DEFAULT_ICON)
     end
     return icon
 end
@@ -293,7 +295,7 @@ local function UpdatePluginButtons()
 
         button.addonID = addon.id
         button.addonName = addon.name
-        button.icon:SetTexture(addon.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        button.icon:SetTexture(addon.icon or Util.DEFAULT_ICON)
         button:Show()
         button.background:SetShown(addon.id == activeID)
     end
