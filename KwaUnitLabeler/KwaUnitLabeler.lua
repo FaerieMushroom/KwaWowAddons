@@ -89,8 +89,7 @@ local addButton
 local scroll
 local content
 local emptyLabel
-local rows = {}
-local rowCount = 0
+local rowPool
 local focusRow
 
 local settingsPanel
@@ -271,6 +270,97 @@ end
 
 -- Rows -------------------------------------------------------------------------
 
+local function CreateRow(index)
+    local row = CreateFrame("Frame", nil, content)
+    row:SetHeight(ROW_HEIGHT)
+    row:EnableMouse(true)
+
+    row.background = row:CreateTexture(nil, "BACKGROUND")
+    row.background:SetAllPoints()
+    row.background:SetColorTexture(1, 1, 1, 0.04)
+    row.background:Hide()
+
+    row.edit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+    row.edit:SetHeight(20)
+    row.edit:SetPoint("TOPLEFT", row, "TOPLEFT", 4, -3)
+    row.edit:SetPoint("TOPRIGHT", row, "TOPRIGHT", -50, -3)
+    row.edit:SetAutoFocus(false)
+    row.edit:SetMaxLetters(80)
+    row.edit:SetFontObject("GameFontHighlightSmall")
+    row.edit:SetScript("OnTextChanged", function(self)
+        if self.entry then
+            self.entry.name = self:GetText() or ""
+            if not self.updating then RefreshPlates() end
+        end
+    end)
+    row.edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    row.edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    row.iconButton = CreateFrame("Button", nil, row, "BackdropTemplate")
+    row.iconButton:SetSize(22, 22)
+    row.iconButton:SetPoint("RIGHT", row, "RIGHT", -24, 0)
+    row.iconButton:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    row.iconButton:SetBackdropColor(0.08, 0.08, 0.1, 1)
+    row.iconButton:SetBackdropBorderColor(0.3, 0.3, 0.36, 1)
+
+    row.icon = row.iconButton:CreateTexture(nil, "ARTWORK")
+    row.icon:SetAllPoints()
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    row.iconButton:SetScript("OnClick", function(self)
+        if self.entry then ShowIconPicker(self) end
+    end)
+    row.iconButton:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(0.5, 0.5, 0.58, 1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Choose icon", 1, 0.82, 0)
+        GameTooltip:Show()
+    end)
+    row.iconButton:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(0.3, 0.3, 0.36, 1)
+        GameTooltip:Hide()
+    end)
+
+    row.delete = CreateFrame("Button", nil, row)
+    row.delete:SetSize(16, 16)
+    row.delete:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    local deleteText = row.delete:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    deleteText:SetAllPoints()
+    deleteText:SetText("x")
+    row.delete:SetScript("OnClick", function(self)
+        local entry = self.entry
+        if not entry then return end
+        for i, candidate in ipairs(EnsureDB().entries) do
+            if candidate == entry then
+                table.remove(EnsureDB().entries, i)
+                break
+            end
+        end
+        Refresh()
+        RefreshPlates()
+    end)
+    row.delete:SetScript("OnEnter", function()
+        deleteText:SetTextColor(1, 0.3, 0.3)
+    end)
+    row.delete:SetScript("OnLeave", function()
+        deleteText:SetTextColor(1, 1, 1)
+    end)
+
+    row:SetScript("OnEnter", function(self) self.background:Show() end)
+    row:SetScript("OnLeave", function(self) self.background:Hide() end)
+
+    return row
+end
+
+rowPool = Util.CreateRowPool(CreateRow)
+
 local function Refresh()
     if not content then return end
 
@@ -281,96 +371,7 @@ local function Refresh()
 
     local y = 0
     for index, entry in ipairs(db.entries) do
-        local row = rows[index]
-        if not row then
-            row = CreateFrame("Frame", nil, content)
-            row:SetHeight(ROW_HEIGHT)
-            row:EnableMouse(true)
-
-            row.background = row:CreateTexture(nil, "BACKGROUND")
-            row.background:SetAllPoints()
-            row.background:SetColorTexture(1, 1, 1, 0.04)
-            row.background:Hide()
-
-            row.edit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
-            row.edit:SetHeight(20)
-            row.edit:SetPoint("TOPLEFT", row, "TOPLEFT", 4, -3)
-            row.edit:SetPoint("TOPRIGHT", row, "TOPRIGHT", -50, -3)
-            row.edit:SetAutoFocus(false)
-            row.edit:SetMaxLetters(80)
-            row.edit:SetFontObject("GameFontHighlightSmall")
-            row.edit:SetScript("OnTextChanged", function(self)
-                if self.entry then
-                    self.entry.name = self:GetText() or ""
-                    if not self.updating then RefreshPlates() end
-                end
-            end)
-            row.edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-            row.edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-            row.iconButton = CreateFrame("Button", nil, row, "BackdropTemplate")
-            row.iconButton:SetSize(22, 22)
-            row.iconButton:SetPoint("RIGHT", row, "RIGHT", -24, 0)
-            row.iconButton:SetBackdrop({
-                bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-                edgeFile = "Interface\\Buttons\\WHITE8X8",
-                tile = true,
-                tileSize = 16,
-                edgeSize = 1,
-                insets = { left = 1, right = 1, top = 1, bottom = 1 },
-            })
-            row.iconButton:SetBackdropColor(0.08, 0.08, 0.1, 1)
-            row.iconButton:SetBackdropBorderColor(0.3, 0.3, 0.36, 1)
-
-            row.icon = row.iconButton:CreateTexture(nil, "ARTWORK")
-            row.icon:SetAllPoints()
-            row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-            row.iconButton:SetScript("OnClick", function(self)
-                if self.entry then ShowIconPicker(self) end
-            end)
-            row.iconButton:SetScript("OnEnter", function(self)
-                self:SetBackdropBorderColor(0.5, 0.5, 0.58, 1)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine("Choose icon", 1, 0.82, 0)
-                GameTooltip:Show()
-            end)
-            row.iconButton:SetScript("OnLeave", function(self)
-                self:SetBackdropBorderColor(0.3, 0.3, 0.36, 1)
-                GameTooltip:Hide()
-            end)
-
-            row.delete = CreateFrame("Button", nil, row)
-            row.delete:SetSize(16, 16)
-            row.delete:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-            local deleteText = row.delete:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            deleteText:SetAllPoints()
-            deleteText:SetText("x")
-            row.delete:SetScript("OnClick", function(self)
-                local entry = self.entry
-                if not entry then return end
-                for i, candidate in ipairs(EnsureDB().entries) do
-                    if candidate == entry then
-                        table.remove(EnsureDB().entries, i)
-                        break
-                    end
-                end
-                Refresh()
-                RefreshPlates()
-            end)
-            local deleteTextRef = deleteText
-            row.delete:SetScript("OnEnter", function()
-                deleteTextRef:SetTextColor(1, 0.3, 0.3)
-            end)
-            row.delete:SetScript("OnLeave", function()
-                deleteTextRef:SetTextColor(1, 1, 1)
-            end)
-
-            row:SetScript("OnEnter", function(self) self.background:Show() end)
-            row:SetScript("OnLeave", function(self) self.background:Hide() end)
-
-            rows[index] = row
-        end
+        local row = rowPool:Get(index)
 
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
@@ -392,16 +393,13 @@ local function Refresh()
         y = y + ROW_HEIGHT
     end
 
-    for index = #db.entries + 1, rowCount do
-        rows[index]:Hide()
-    end
-    rowCount = #db.entries
+    rowPool:Trim(#db.entries)
 
     content:SetHeight(math.max(y, 1))
     emptyLabel:SetShown(#db.entries == 0)
 
-    if focusRow and rows[focusRow] then
-        rows[focusRow].edit:SetFocus()
+    if focusRow and rowPool.rows[focusRow] then
+        rowPool.rows[focusRow].edit:SetFocus()
         focusRow = nil
     end
 end

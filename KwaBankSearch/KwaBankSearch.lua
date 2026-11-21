@@ -53,16 +53,14 @@ local panel
 local searchFrame
 local searchBox
 local searchPlaceholder
+local UpdatePlaceholder
 local showInventoryCheck
 local showInventoryLabel
 local statusLabel
 local scroll
 local content
 
-local itemRows = {}
-local headerRows = {}
-local itemRowCount = 0
-local headerRowCount = 0
+local itemPool, headerPool
 
 local searchToken = 0
 local scanToken = 0
@@ -477,16 +475,6 @@ local function UpdateContentWidth()
     Util.FitContentWidth(scroll, content, panel, 26, 220)
 end
 
-local function UpdatePlaceholder()
-    if not searchPlaceholder or not searchBox then return end
-    local text = searchBox:GetText() or ""
-    if text == "" then
-        searchPlaceholder:Show()
-    else
-        searchPlaceholder:Hide()
-    end
-end
-
 local function CreateHeaderRow(index)
     local row = CreateFrame("Frame", nil, content)
     row:SetHeight(HEADER_HEIGHT)
@@ -497,28 +485,14 @@ local function CreateHeaderRow(index)
     row.text:SetJustifyH("LEFT")
     row.text:SetWordWrap(false)
 
-    headerRows[index] = row
     return row
 end
 
 local function CreateItemRow(index)
-    local row = CreateFrame("Button", nil, content)
-    row:SetHeight(ROW_HEIGHT)
-
-    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetAllPoints()
-    highlight:SetColorTexture(1, 1, 1, 0.06)
-
-    row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(20, 20)
-    row.icon:SetPoint("LEFT", row, "LEFT", 1, 0)
-    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-    row.name:SetPoint("RIGHT", row, "RIGHT", -44, 0)
-    row.name:SetJustifyH("LEFT")
-    row.name:SetWordWrap(false)
+    local row = Util.CreateItemRow(content, {
+        height = ROW_HEIGHT,
+        nameRightOffset = -44,
+    })
 
     row.countText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.countText:SetPoint("RIGHT", row, "RIGHT", 0, 0)
@@ -553,16 +527,18 @@ local function CreateItemRow(index)
         end
     end)
 
-    itemRows[index] = row
     return row
 end
 
+itemPool = Util.CreateRowPool(CreateItemRow)
+headerPool = Util.CreateRowPool(CreateHeaderRow)
+
 local function GetItemRow(index)
-    return itemRows[index] or CreateItemRow(index)
+    return itemPool:Get(index)
 end
 
 local function GetHeaderRow(index)
-    return headerRows[index] or CreateHeaderRow(index)
+    return headerPool:Get(index)
 end
 
 NS.Refresh = function()
@@ -622,16 +598,10 @@ NS.Refresh = function()
         end
     end
 
-    for index = shownHeaders + 1, headerRowCount do
-        headerRows[index]:Hide()
-    end
-    headerRowCount = shownHeaders
-
-    for index = shownItems + 1, itemRowCount do
-        itemRows[index].itemID = nil
-        itemRows[index]:Hide()
-    end
-    itemRowCount = shownItems
+    headerPool:Trim(shownHeaders)
+    itemPool:Trim(shownItems, function(row)
+        row.itemID = nil
+    end)
 
     content:SetHeight(math.max(y, 1))
 
@@ -669,44 +639,12 @@ local function CreatePanel(parent)
 
     panel = CreateFrame("Frame", nil, parent)
 
-    searchFrame = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    searchFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    searchFrame:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    searchFrame:SetHeight(22)
-    searchFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    searchFrame:SetBackdropColor(0.07, 0.07, 0.09, 0.95)
-    searchFrame:SetBackdropBorderColor(0.24, 0.24, 0.3, 1)
-
-    searchBox = CreateFrame("EditBox", nil, searchFrame)
-    searchBox:SetPoint("TOPLEFT", searchFrame, "TOPLEFT", 6, -1)
-    searchBox:SetPoint("BOTTOMRIGHT", searchFrame, "BOTTOMRIGHT", -6, 1)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(80)
-    local fontObject = _G.ChatFontNormal or _G.GameFontNormal
-    if fontObject then
-        searchBox:SetFontObject(fontObject)
-    end
-    searchBox:SetTextInsets(0, 0, 0, 0)
-    searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    searchBox:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-        NS.Refresh()
-    end)
-    searchBox:SetScript("OnTextChanged", function()
-        UpdatePlaceholder()
-        ScheduleSearch()
-    end)
-    searchBox:SetScript("OnEditFocusGained", UpdatePlaceholder)
-    searchBox:SetScript("OnEditFocusLost", UpdatePlaceholder)
-
-    searchPlaceholder = searchFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    searchPlaceholder:SetPoint("LEFT", searchFrame, "LEFT", 7, 0)
-    searchPlaceholder:SetText("Search items...")
+    searchFrame, searchBox, searchPlaceholder, UpdatePlaceholder =
+        Util.CreateSearchBox(panel, {
+            maxLetters = 80,
+            onEnter = function() NS.Refresh() end,
+            onChanged = function() ScheduleSearch() end,
+        })
 
     showInventoryCheck = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
     showInventoryCheck:SetSize(20, 20)

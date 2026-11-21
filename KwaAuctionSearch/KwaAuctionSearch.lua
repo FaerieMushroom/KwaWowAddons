@@ -30,10 +30,11 @@ local panel
 local searchFrame
 local searchBox
 local placeholder
+local updatePlaceholder
 local statusLabel
 local scroll
 local content
-local rows = {}
+local rowPool
 
 local detailFrame
 local detailBack
@@ -633,25 +634,14 @@ ShowDetail = function(itemID)
 end
 
 local function CreateRow(parent, index)
-    local row = CreateFrame("Button", nil, parent)
-    row:SetHeight(ROW_HEIGHT)
-
-    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetAllPoints()
-    highlight:SetColorTexture(1, 1, 1, 0.06)
-
-    row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(30, 30)
+    local row = Util.CreateItemRow(parent, { height = ROW_HEIGHT, iconSize = 30 })
     row.icon:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -2)
     row.icon:SetTexture(Util.DEFAULT_ICON)
     row.icon:SetAlpha(1)
     row.icon:Show()
 
-    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.name:SetPoint("TOPLEFT", row, "TOPLEFT", 36, -2)
     row.name:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -2)
-    row.name:SetJustifyH("LEFT")
-    row.name:SetWordWrap(false)
     row.name:SetHeight(12)
 
     row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -702,27 +692,22 @@ local function CreateRow(parent, index)
     return row
 end
 
-local function GetRow(index)
-    local row = rows[index]
-    if not row then
-        row = CreateRow(content, index)
-        rows[index] = row
-    end
-    return row
-end
+rowPool = Util.CreateRowPool(function(index)
+    return CreateRow(content, index)
+end)
 
 local function ShowResults(results, totalMatches)
     resultCount = #results
     totalMatches = totalMatches or resultCount
 
     for index = 1, MAX_RESULTS do
-        local row = rows[index]
+        local row = rowPool.rows[index]
         if index <= resultCount then
             local itemID = results[index]
             local meta = itemMeta[itemID]
             local info = itemID and GetItemPriceInfo(itemKey[itemID])
 
-            row = row or GetRow(index)
+            row = row or rowPool:Get(index)
             row.itemID = itemID
             row.icon:SetTexture((meta and meta.icon) or Util.DEFAULT_ICON)
             row.icon:SetAlpha(1)
@@ -771,10 +756,9 @@ local function ShowResults(results, totalMatches)
 end
 
 local function ClearResults()
-    for index = 1, #rows do
-        rows[index].itemID = nil
-        rows[index]:Hide()
-    end
+    rowPool:HideAll(function(row)
+        row.itemID = nil
+    end)
     resultCount = 0
     if content then content:SetHeight(1) end
 end
@@ -849,65 +833,19 @@ local function ScheduleSearch()
     end
 end
 
-local function UpdatePlaceholder()
-    if not placeholder or not searchBox then return end
-    local text = searchBox:GetText() or ""
-    if text == "" then
-        placeholder:Show()
-    else
-        placeholder:Hide()
-    end
-end
-
 CreatePanel = function(parent)
     if panel then return panel end
 
     panel = CreateFrame("Frame", nil, parent)
 
-    searchFrame = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    searchFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    searchFrame:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    searchFrame:SetHeight(22)
-    searchFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    searchFrame:SetBackdropColor(0.07, 0.07, 0.09, 0.95)
-    searchFrame:SetBackdropBorderColor(0.24, 0.24, 0.3, 1)
-
-    searchBox = CreateFrame("EditBox", nil, searchFrame)
-    searchBox:SetPoint("TOPLEFT", searchFrame, "TOPLEFT", 6, -1)
-    searchBox:SetPoint("BOTTOMRIGHT", searchFrame, "BOTTOMRIGHT", -6, 1)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(60)
-    local fontObject = _G.ChatFontNormal or _G.GameFontNormal
-    if fontObject then
-        searchBox:SetFontObject(fontObject)
-    end
-    searchBox:SetTextInsets(0, 0, 0, 0)
-    searchBox:SetScript("OnEscapePressed", function(self)
-        self:ClearFocus()
-    end)
-    searchBox:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-        RunSearch()
-    end)
-    searchBox:SetScript("OnTextChanged", function()
-        UpdatePlaceholder()
-        ScheduleSearch()
-    end)
-    searchBox:SetScript("OnEditFocusGained", function()
-        UpdatePlaceholder()
-    end)
-    searchBox:SetScript("OnEditFocusLost", function()
-        UpdatePlaceholder()
-    end)
-
-    placeholder = searchFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    placeholder:SetPoint("LEFT", searchFrame, "LEFT", 7, 0)
-    placeholder:SetText("Search items...")
+    searchFrame, searchBox, placeholder, updatePlaceholder =
+        Util.CreateSearchBox(panel, {
+            maxLetters = 60,
+            onChanged = function() ScheduleSearch() end,
+            onEnter = function()
+                RunSearch()
+            end,
+        })
 
     statusLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     statusLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 1, -25)
@@ -930,11 +868,11 @@ CreatePanel = function(parent)
         elseif searchBox and (searchBox:GetText() or "") ~= "" then
             RunSearch()
         else
-            UpdatePlaceholder()
+            updatePlaceholder()
         end
     end)
 
-    UpdatePlaceholder()
+    updatePlaceholder()
     return panel
 end
 

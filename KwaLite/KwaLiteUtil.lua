@@ -249,4 +249,145 @@ function Util.HideTooltip()
     if GameTooltip then GameTooltip:Hide() end
 end
 
+-- A reusable list row: Button frame, highlight, icon and name label.
+--
+-- options:
+--   height        default 28
+--   iconSize      default 20
+--   highlightAlpha default 0.06
+--   nameRightOffset pixels from the row's right edge (default 0)
+--   iconLeft      left inset of the icon (default 1)
+--
+-- Returns a Button with .highlight, .icon, .name. Callers add value
+-- columns/scripts as needed.
+function Util.CreateItemRow(parent, options)
+    options = options or {}
+    local height = options.height or 28
+    local iconSize = options.iconSize or 20
+
+    local row = CreateFrame("Button", nil, parent)
+    row:SetHeight(height)
+
+    local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetColorTexture(1, 1, 1, options.highlightAlpha or 0.06)
+    row.highlight = highlight
+
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(iconSize, iconSize)
+    row.icon:SetPoint("LEFT", row, "LEFT", options.iconLeft or 1, 0)
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon:SetAlpha(1)
+
+    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+    row.name:SetPoint("RIGHT", row, "RIGHT", options.nameRightOffset or 0, 0)
+    row.name:SetJustifyH("LEFT")
+    row.name:SetWordWrap(false)
+
+    return row
+end
+
+-- A backdropped search field with placeholder text.
+--
+-- options:
+--   maxLetters   default 60
+--   placeholder  default "Search items..."
+--   onChanged    called with (text, userInput) on every edit
+--   onEnter      called when Enter is pressed (focus is cleared first)
+--   height       default 22
+--
+-- Returns frame, editBox, placeholderFontString, updatePlaceholder.
+function Util.CreateSearchBox(parent, options)
+    options = options or {}
+
+    local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    frame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+    frame:SetHeight(options.height or 22)
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    })
+    frame:SetBackdropColor(0.07, 0.07, 0.09, 0.95)
+    frame:SetBackdropBorderColor(0.24, 0.24, 0.3, 1)
+
+    local box = CreateFrame("EditBox", nil, frame)
+    box:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -1)
+    box:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -6, 1)
+    box:SetAutoFocus(false)
+    box:SetMaxLetters(options.maxLetters or 60)
+    local fontObject = _G.ChatFontNormal or _G.GameFontNormal
+    if fontObject then
+        box:SetFontObject(fontObject)
+    end
+    box:SetTextInsets(0, 0, 0, 0)
+
+    local placeholder = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    placeholder:SetPoint("LEFT", frame, "LEFT", 7, 0)
+    placeholder:SetText(options.placeholder or "Search items...")
+
+    local function updatePlaceholder()
+        if (box:GetText() or "") == "" then
+            placeholder:Show()
+        else
+            placeholder:Hide()
+        end
+    end
+
+    box:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+    box:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        if options.onEnter then options.onEnter() end
+    end)
+    box:SetScript("OnTextChanged", function(self, userInput)
+        updatePlaceholder()
+        if options.onChanged then options.onChanged(self:GetText() or "", userInput) end
+    end)
+    box:SetScript("OnEditFocusGained", updatePlaceholder)
+    box:SetScript("OnEditFocusLost", updatePlaceholder)
+
+    updatePlaceholder()
+    return frame, box, placeholder, updatePlaceholder
+end
+
+-- Pool of sequential list rows. Get(index) creates on demand; Trim(count)
+-- hides everything above count. `pool.rows` remains available for direct
+-- indexing and `pool.count` is the number of visible rows.
+function Util.CreateRowPool(createRow)
+    local pool = { rows = {}, count = 0 }
+
+    function pool:Get(index)
+        local row = self.rows[index]
+        if not row then
+            row = createRow(index)
+            self.rows[index] = row
+        end
+        if index > self.count then self.count = index end
+        return row
+    end
+
+    function pool:Trim(count, onHide)
+        if count < 0 then count = 0 end
+        for index = count + 1, self.count do
+            local row = self.rows[index]
+            if row then
+                if onHide then onHide(row, index) end
+                row:Hide()
+            end
+        end
+        if count < self.count then self.count = count end
+    end
+
+    function pool:HideAll(onHide)
+        self:Trim(0, onHide)
+    end
+
+    return pool
+end
+
 return Util

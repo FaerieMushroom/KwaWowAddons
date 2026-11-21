@@ -32,6 +32,9 @@ should use it instead of copying helpers. It provides:
 - `Util.ColorName(name, quality)` – quality-colored item name.
 - `Util.CreateScrollPanel(panel, options)` – standard scroll frame + scroll child.
 - `Util.FitContentWidth(scroll, content, panel, padding, fallbackWidth)` – resize scroll content.
+- `Util.CreateSearchBox(parent, options)` – backdropped search field with placeholder; returns `frame, box, placeholder, updatePlaceholder`.
+- `Util.CreateRowPool(createRow)` – sequential row pool; `Get(index)` creates on demand, `Trim(count[, onHide])` hides extra rows.
+- `Util.CreateItemRow(parent, options)` – shared Button row with highlight/icon/name; caller adds extra columns or scripts.
 - `Util.ShowItemTooltip(owner, id, link)` / `Util.HideTooltip()`.
 
 ```lua

@@ -20,8 +20,7 @@ local subtitle
 local emptyLabel
 local menu
 local overlay
-local rows = {}
-local rowCount = 0
+local rowPool
 local auctionCache = {}
 local auctionLoadStarted
 local requestedItems = {}
@@ -188,11 +187,8 @@ local function BuildRows()
     return list, note, money, loading
 end
 
-local function GetRow(index)
-    local row = rows[index]
-    if row then return row end
-
-    row = CreateFrame("Frame", nil, content)
+local function CreateRow(index)
+    local row = CreateFrame("Frame", nil, content)
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.name:SetJustifyH("LEFT")
@@ -201,9 +197,10 @@ local function GetRow(index)
     row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     row.value:SetJustifyH("RIGHT")
     row.value:SetWordWrap(false)
-    rows[index] = row
     return row
 end
+
+rowPool = Util.CreateRowPool(CreateRow)
 
 local function Refresh()
     if not panel then return end
@@ -222,7 +219,7 @@ local function Refresh()
     local y = 0
     for index = 1, #list do
         local data = list[index]
-        local row = GetRow(index)
+        local row = rowPool:Get(index)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
         row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
@@ -239,10 +236,7 @@ local function Refresh()
         y = y + ROW_HEIGHT
     end
 
-    for index = #list + 1, rowCount do
-        rows[index]:Hide()
-    end
-    rowCount = #list
+    rowPool:Trim(#list)
 
     if #list == 0 then
         emptyLabel:Show()
