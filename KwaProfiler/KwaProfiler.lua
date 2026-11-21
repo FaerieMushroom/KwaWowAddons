@@ -34,6 +34,8 @@ local rows = {}
 local rowCount = 0
 
 local active = false
+local activeDuration = 0
+local lastActiveNow = 0
 local ownerMapBuilt = false
 local nextActivationCheck = 0
 local nextRender = 0
@@ -263,6 +265,8 @@ local function StartProfiling()
     WrapAddonCallbacks()
 
     active = true
+    activeDuration = 0
+    lastActiveNow = Now()
     stackDepth = 0
     buckets = {}
     currentBucket = { start = Now(), frames = 0, owners = {} }
@@ -327,6 +331,7 @@ local function BuildSnapshot()
 
         local data = aggregate[owner]
         local total = session[owner]
+        local idleMs = math.max(0, activeDuration - (data and data.ms or 0))
         list[#list + 1] = {
             owner = owner,
             label = GetOwnerLabel(owner),
@@ -334,6 +339,8 @@ local function BuildSnapshot()
             ms = data and data.ms or 0,
             calls = data and data.calls or 0,
             max = data and data.max or 0,
+            idleMs = idleMs,
+            idlePerFrame = idleMs / frames,
             sessionMs = total and total.ms or 0,
             sessionCalls = total and total.calls or 0,
             sessionMsPerFrame = total and (total.ms / math.max(sessionFrames, 1)) or 0,
@@ -438,6 +445,10 @@ local function Render()
         else
             row.detail:SetText("no activity in the last " .. WINDOW_SECONDS .. "s")
         end
+        if entry.idleMs > 0 then
+            row.detail:SetFormattedText("%s  ·  %.2f ms idle",
+                row.detail:GetText() or "", entry.idleMs)
+        end
         row:Show()
         y = y + ROW_HEIGHT
     end
@@ -540,6 +551,10 @@ driver:SetScript("OnUpdate", function()
     local now = Now()
 
     if active then
+        local dt = Now() - lastActiveNow
+        if dt > 0 then activeDuration = activeDuration + dt end
+        lastActiveNow = Now()
+
         local bucket = EnsureBucket()
         bucket.frames = bucket.frames + 1
         sessionFrames = sessionFrames + 1
