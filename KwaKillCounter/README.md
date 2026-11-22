@@ -63,6 +63,7 @@ Another page in the Kwa Lite plugin bar. Opening it lists every recorded item, s
 - Right-click the title bar or minimized bar for the `Close Kwa` option.
 - Merged groups persist across reloads and game sessions.
 - Hover items for item tooltips with per-item vendor/auction values.
+- Missing item names are loaded a few at a time in the background, with the list refreshing as data arrives, so unloaded items no longer stay as `Item <id>`.
 - **Ctrl+Click** a mob name to start a merge (the first mob gets a green outline), then Ctrl+Click another mob to merge their tracker entries. Merged entries show the first mob's name with `+X`.
 - **Right-click** a mob name to open a context menu:
   - `Reset group/kill` — deletes the recorded kill/loot data for the mob, or for every mob in a merged group.

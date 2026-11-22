@@ -48,6 +48,89 @@ local auctionCache = {}
 local HandleEntryClick
 local Refresh
 
+-- Item data arrives asynchronously. Load visible items a few at a time, then
+-- refresh on a short throttle so names fill in without freezing the panel.
+local ITEM_LOAD_BUDGET = 10
+local ITEM_LOAD_REFRESH = 0.25
+
+local loaderItems = {}
+local loaderSeen = {}
+local loaderAttempted = {}
+local loaderPos = 0
+local loaderView
+
+local loaderJob = CreateFrame("Frame")
+loaderJob:Hide()
+loaderJob.elapsed = 0
+loaderJob.dirty = false
+
+local function RequestItem(itemID)
+    if loaderAttempted[itemID] then return false end
+    if GetItemInfo and GetItemInfo(itemID) then return false end
+    loaderAttempted[itemID] = true
+    Util.RequestItemData(itemID)
+    return true
+end
+
+local function ResetItemLoader()
+    loaderItems = {}
+    loaderSeen = {}
+    loaderAttempted = {}
+    loaderPos = 0
+    loaderView = nil
+    loaderJob:Hide()
+    loaderJob.elapsed = 0
+    loaderJob.dirty = false
+end
+
+loaderJob:SetScript("OnUpdate", function(self, elapsed)
+    if not panel or not panel:IsShown() then
+        self:Hide()
+        return
+    end
+
+    local requested = 0
+    while loaderPos < #loaderItems and requested < ITEM_LOAD_BUDGET do
+        loaderPos = loaderPos + 1
+        if RequestItem(loaderItems[loaderPos]) then
+            requested = requested + 1
+            self.dirty = true
+        end
+    end
+
+    self.elapsed = (self.elapsed or 0) + elapsed
+    if self.dirty and self.elapsed >= ITEM_LOAD_REFRESH then
+        self.elapsed = 0
+        self.dirty = false
+        Refresh()
+    end
+
+    if loaderPos >= #loaderItems and not self.dirty then
+        self:Hide()
+    end
+end)
+
+-- Late item data (for example tooltips loading other items) should still
+-- update names while the panel is visible.
+local itemEvents = CreateFrame("Frame")
+itemEvents:Show()
+pcall(itemEvents.RegisterEvent, itemEvents, "GET_ITEM_INFO_RECEIVED")
+
+local itemRefreshPending = false
+itemEvents:SetScript("OnEvent", function()
+    if not panel or not panel:IsShown() or itemRefreshPending then return end
+    itemRefreshPending = true
+    if C_Timer and C_Timer.After then
+        C_Timer.After(ITEM_LOAD_REFRESH, function()
+            itemRefreshPending = false
+            if panel and panel:IsShown() then Refresh() end
+        end)
+    else
+        itemRefreshPending = false
+        Refresh()
+    end
+end)
+
 local function EnsureDB()
     if type(KwaTrackerDB) ~= "table" then
         KwaTrackerDB = {}
@@ -944,6 +1027,36 @@ Refresh = function()
         rows = matches
     end
 
+    local viewKey = sessionView and "session" or "overall"
+    if viewKey ~= loaderView then
+        loaderItems = {}
+        loaderSeen = {}
+        loaderAttempted = {}
+        loaderPos = 0
+        loaderView = viewKey
+        loaderJob.elapsed = 0
+        loaderJob.dirty = false
+    end
+
+    for index = 1, #rows do
+        local items = rows[index].items
+        if items then
+            for itemID in pairs(items) do
+                local numericID = tonumber(itemID)
+                if numericID and not loaderSeen[numericID] then
+                    loaderSeen[numericID] = true
+                    loaderItems[#loaderItems + 1] = numericID
+                end
+            end
+        end
+    end
+
+    if loaderPos < #loaderItems then
+        loaderJob:Show()
+    else
+        loaderJob:Hide()
+    end
+
     local y = 0
     for index = 1, #rows do
         local entry = GetEntry(index)
@@ -1059,6 +1172,7 @@ local function CreatePanel(parent)
     footer:SetText("Ctrl+Click: merge  |  Right-click: menu")
 
     panel:SetScript("OnShow", function()
+        ResetItemLoader()
         Refresh()
         if scroll then scroll:SetVerticalScroll(0) end
     end)
