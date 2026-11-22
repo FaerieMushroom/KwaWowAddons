@@ -384,6 +384,144 @@ function Util.CreateSearchBox(parent, options)
     return frame, box, placeholder, updatePlaceholder
 end
 
+-- Parses a money string such as "1g 50s 25c" into copper. A plain number is
+-- treated as copper. Returns nil when the text is not money.
+function Util.ParseMoney(text)
+    if type(text) == "number" then return text end
+    if type(text) ~= "string" then return nil end
+
+    text = text:lower():gsub("%s+", "")
+    if text == "" then return nil end
+
+    local copper = 0
+    local matched = false
+    for amount, unit in text:gmatch("(%d+%.?%d*)([gsc])") do
+        local value = tonumber(amount)
+        if value then
+            if unit == "g" then
+                value = value * 10000
+            elseif unit == "s" then
+                value = value * 100
+            end
+            copper = copper + value
+            matched = true
+        end
+    end
+
+    if matched then return math.floor(copper + 0.5) end
+
+    local value = tonumber(text)
+    if value then return math.floor(value + 0.5) end
+    return nil
+end
+
+-- Parses a filter query into free-text terms plus min/max numeric bounds.
+--
+-- spec:
+--   fields  array of field specs: {
+--             token   token prefix, e.g. "kills" for "kills>5"
+--             minKey  parsed key for the lower bound (default token .. "Min")
+--             maxKey  parsed key for the upper bound (default token .. "Max")
+--             value   key to read in Util.MatchesFilter values (default token)
+--             parse   optional function(raw) -> number (default tonumber)
+--             step    integer step for > and < (default 1)
+--           }
+--   aliases map of alias (without @) -> value, applied as an exact match
+--   aliasField field spec used for aliases
+--   flags   map of literal token -> parsed key set to true
+--
+-- The result stores `fields` (a reference to spec.fields) and `terms` so
+-- Util.MatchesFilter can evaluate it without allocating.
+function Util.ParseFilterQuery(text, spec)
+    spec = spec or {}
+    local parsed = { terms = {}, fields = spec.fields }
+    text = (text or ""):lower()
+
+    local function raiseMin(key, value)
+        if not parsed[key] or value > parsed[key] then parsed[key] = value end
+    end
+    local function lowerMax(key, value)
+        if not parsed[key] or value < parsed[key] then parsed[key] = value end
+    end
+
+    local function apply(field, op, raw)
+        local value = field.parse and field.parse(raw) or tonumber(raw)
+        if not value then return end
+
+        local minKey = field.minKey or (field.token .. "Min")
+        local maxKey = field.maxKey or (field.token .. "Max")
+        if op == "=" then
+            raiseMin(minKey, value)
+            lowerMax(maxKey, value)
+        elseif op == ">" then
+            raiseMin(minKey, value + (field.step or 1))
+        elseif op == ">=" then
+            raiseMin(minKey, value)
+        elseif op == "<" then
+            lowerMax(maxKey, value - (field.step or 1))
+        elseif op == "<=" then
+            lowerMax(maxKey, value)
+        end
+    end
+
+    for token in text:gmatch("%S+") do
+        local flagKey = spec.flags and spec.flags[token]
+        local alias = token:match("^@(%a+)$")
+        local field, op, value
+
+        if flagKey then
+            parsed[flagKey] = true
+        elseif alias and spec.aliases and spec.aliasField and spec.aliases[alias] ~= nil then
+            apply(spec.aliasField, "=", spec.aliases[alias])
+        else
+            if spec.fields then
+                for index = 1, #spec.fields do
+                    local candidate = spec.fields[index]
+                    local candidateOp, candidateValue = token:match("^" .. candidate.token .. "([<>=]+)(%S+)$")
+                    if candidateOp then
+                        field, op, value = candidate, candidateOp, candidateValue
+                        break
+                    end
+                end
+            end
+
+            if field then
+                apply(field, op, value)
+            else
+                parsed.terms[#parsed.terms + 1] = token
+            end
+        end
+    end
+
+    return parsed
+end
+
+-- Evaluates a parsed filter query against a values table. Keys come from each
+-- field's `value` (or `token`). `values.nameLower` is matched against terms.
+function Util.MatchesFilter(parsed, values)
+    local fields = parsed.fields
+    if fields then
+        for index = 1, #fields do
+            local field = fields[index]
+            local value = values[field.value or field.token] or 0
+            local min = parsed[field.minKey or (field.token .. "Min")]
+            if min and value < min then return false end
+            local max = parsed[field.maxKey or (field.token .. "Max")]
+            if max and value > max then return false end
+        end
+    end
+
+    local terms = parsed.terms
+    if terms and #terms > 0 then
+        local name = values.nameLower or ""
+        for index = 1, #terms do
+            if not name:find(terms[index], 1, true) then return false end
+        end
+    end
+
+    return true
+end
+
 -- Pool of sequential list rows. Get(index) creates on demand; Trim(count)
 -- hides everything above count. `pool.rows` remains available for direct
 -- indexing and `pool.count` is the number of visible rows.

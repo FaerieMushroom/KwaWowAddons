@@ -10,10 +10,40 @@ local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 
 local ROW_HEIGHT = 18
 local MIN_KILLS = 10
+local SEARCH_DEBOUNCE = 0.15
+
+local KILLS_FIELD = {
+    token = "kills",
+    minKey = "killsMin",
+    maxKey = "killsMax",
+    value = "kills",
+}
+
+local VENDOR_FIELD = {
+    token = "vendor",
+    minKey = "vendorMin",
+    maxKey = "vendorMax",
+    value = "vendor",
+    parse = Util.ParseMoney,
+}
+
+local AUCTION_FIELD = {
+    token = "auction",
+    minKey = "auctionMin",
+    maxKey = "auctionMax",
+    value = "auction",
+    parse = Util.ParseMoney,
+}
+
+local FILTER_SPEC = { fields = { KILLS_FIELD, VENDOR_FIELD, AUCTION_FIELD } }
+local MATCH_VALUES = {}
 
 local panel
 local scroll
 local content
+local searchFrame
+local searchBox
+local searchToken = 0
 local dropdown
 local dropdownLabel
 local subtitle
@@ -81,12 +111,26 @@ local function SortRows(list, compare)
     end)
 end
 
-local function BuildRows()
+local function PassesFilter(parsed, filtering, name, kills, vendor, auction)
+    if not filtering then return true end
+    MATCH_VALUES.nameLower = (name or ""):lower()
+    MATCH_VALUES.kills = kills or 0
+    MATCH_VALUES.vendor = vendor or 0
+    MATCH_VALUES.auction = auction or 0
+    return Util.MatchesFilter(parsed, MATCH_VALUES)
+end
+
+local function BuildRows(parsed)
     local list = {}
     local note
     local money = false
     local loading = false
     local table_ = MyKillCountTable or {}
+    local filtering = #parsed.terms > 0
+        or parsed.killsMin or parsed.killsMax
+        or parsed.vendorMin or parsed.vendorMax
+        or parsed.auctionMin or parsed.auctionMax
+    local needAuction = parsed.auctionMin or parsed.auctionMax
 
     if currentView == "kills" then
         local totalKills = 0
@@ -94,13 +138,18 @@ local function BuildRows()
         for id, data in pairs(table_) do
             if type(data) == "table" then
                 local count = data.count or 0
-                totalKills = totalKills + count
                 if count > 0 then
-                    mobs = mobs + 1
-                    list[#list + 1] = {
-                        name = data.name or ("NPC " .. tostring(id)),
-                        value = count,
-                    }
+                    local name = data.name or ("NPC " .. tostring(id))
+                    local vendor = data.avgLootValue or 0
+                    local auction = needAuction and MobAuctionValue(id) or 0
+                    if PassesFilter(parsed, filtering, name, count, vendor, auction) then
+                        totalKills = totalKills + count
+                        mobs = mobs + 1
+                        list[#list + 1] = {
+                            name = name,
+                            value = count,
+                        }
+                    end
                 end
             end
         end
@@ -119,7 +168,7 @@ local function BuildRows()
             end
         end
         for species, count in pairs(totals) do
-            if count > 0 then
+            if count > 0 and PassesFilter(parsed, filtering, species, count, 0, 0) then
                 list[#list + 1] = { name = species, value = count, count = count }
             end
         end
@@ -131,11 +180,17 @@ local function BuildRows()
         for id, data in pairs(table_) do
             if type(data) == "table" and (data.count or 0) >= MIN_KILLS
                 and (data.avgLootValue or 0) > 0 then
-                list[#list + 1] = {
-                    name = data.name or ("NPC " .. tostring(id)),
-                    value = data.avgLootValue,
-                    count = data.count or 0,
-                }
+                local name = data.name or ("NPC " .. tostring(id))
+                local count = data.count or 0
+                local vendor = data.avgLootValue or 0
+                local auction = needAuction and MobAuctionValue(id) or 0
+                if PassesFilter(parsed, filtering, name, count, vendor, auction) then
+                    list[#list + 1] = {
+                        name = name,
+                        value = data.avgLootValue,
+                        count = count,
+                    }
+                end
             end
         end
         note = "Average vendor value per kill  ·  min " .. MIN_KILLS .. " kills"
@@ -173,11 +228,17 @@ local function BuildRows()
         for _, candidate in ipairs(candidates) do
             local value = MobAuctionValue(candidate.id)
             if value > 0 then
-                list[#list + 1] = {
-                    name = candidate.data.name or ("NPC " .. tostring(candidate.id)),
-                    value = value,
-                    count = candidate.data.count or 0,
-                }
+                local data = candidate.data
+                local name = data.name or ("NPC " .. tostring(candidate.id))
+                local count = data.count or 0
+                local vendor = data.avgLootValue or 0
+                if PassesFilter(parsed, filtering, name, count, vendor, value) then
+                    list[#list + 1] = {
+                        name = name,
+                        value = value,
+                        count = count,
+                    }
+                end
             end
         end
         note = "Average auction value per kill  ·  min " .. MIN_KILLS .. " kills"
@@ -208,7 +269,9 @@ local function Refresh()
 
     auctionCache = {}
 
-    local list, note, money, loading = BuildRows()
+    local query = searchBox and searchBox:GetText() or ""
+    local parsed = Util.ParseFilterQuery(query, FILTER_SPEC)
+    local list, note, money, loading = BuildRows(parsed)
     local width = Util.FitContentWidth(scroll, content, panel, 26, 260)
 
     subtitle:SetText("|cff9d9d9d" .. (note or "") .. "|r")
@@ -238,7 +301,9 @@ local function Refresh()
     if #list == 0 then
         emptyLabel:Show()
         local text
-        if currentView == "auction" then
+        if query ~= "" then
+            text = "No rows match your search."
+        elseif currentView == "auction" then
             if loading then
                 text = "Loading auction values..."
             elseif not (KKK.HasAuctionator and KKK.HasAuctionator()) then
@@ -352,14 +417,37 @@ local function ShowMenu()
     frame:Show()
 end
 
+local function ScheduleSearch()
+    searchToken = searchToken + 1
+    local token = searchToken
+    if C_Timer and C_Timer.After then
+        C_Timer.After(SEARCH_DEBOUNCE, function()
+            if token == searchToken then Refresh() end
+        end)
+    else
+        Refresh()
+    end
+end
+
 local function CreatePanel(parent)
     if panel then return panel end
 
     panel = CreateFrame("Frame", nil, parent)
 
+    searchFrame, searchBox = Util.CreateSearchBox(panel, {
+        maxLetters = 80,
+        placeholder = "Search NPCs... (kills>5 vendor>1g)",
+        onChanged = function()
+            ScheduleSearch()
+        end,
+        onEnter = function()
+            Refresh()
+        end,
+    })
+
     dropdown = CreateFrame("Button", nil, panel, "BackdropTemplate")
     dropdown:SetSize(190, 22)
-    dropdown:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    dropdown:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -26)
     dropdown:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -396,12 +484,12 @@ local function CreatePanel(parent)
     end)
 
     subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    subtitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 2, -28)
-    subtitle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -28)
+    subtitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 2, -54)
+    subtitle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -54)
     subtitle:SetJustifyH("LEFT")
     subtitle:SetWordWrap(false)
 
-    scroll, content = Util.CreateScrollPanel(panel, { top = 46 })
+    scroll, content = Util.CreateScrollPanel(panel, { top = 72 })
 
     emptyLabel = content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     emptyLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 2, -2)

@@ -14,11 +14,17 @@ local ITEM_HEIGHT = 15
 local EMPTY_HEIGHT = 18
 local ROW_GAP = 4
 
+local SEARCH_DEBOUNCE = 0.15
+local NAME_SPEC = {}
+
 local panel
 local miniFrame
 local miniLabel
 local content
 local scroll
+local searchFrame
+local searchBox
+local searchToken = 0
 local checkbox
 local checkLabel
 local totalsLabel
@@ -874,6 +880,29 @@ local function RefreshMinimized()
     end
 end
 
+local function NameMatches(name, term)
+    return name and name:lower():find(term, 1, true) ~= nil
+end
+
+-- Merged rows show one representative name, but searching should match any
+-- mob in the group.
+local function RowMatchesTerms(row, terms)
+    for index = 1, #terms do
+        local term = terms[index]
+        local found = NameMatches(row.name, term)
+        if not found and row.memberNames then
+            for memberIndex = 1, #row.memberNames do
+                if NameMatches(row.memberNames[memberIndex], term) then
+                    found = true
+                    break
+                end
+            end
+        end
+        if not found then return false end
+    end
+    return true
+end
+
 Refresh = function()
     if not panel or not panel:IsShown() then return end
 
@@ -900,6 +929,21 @@ Refresh = function()
 
     local rows = BuildRows(source)
 
+    local query = searchBox and searchBox:GetText() or ""
+    local terms = Util.ParseFilterQuery(query, NAME_SPEC).terms
+    local filtered = #terms > 0
+
+    if filtered then
+        local matches = {}
+        for index = 1, #rows do
+            local row = rows[index]
+            if RowMatchesTerms(row, terms) then
+                matches[#matches + 1] = row
+            end
+        end
+        rows = matches
+    end
+
     local y = 0
     for index = 1, #rows do
         local entry = GetEntry(index)
@@ -913,14 +957,30 @@ Refresh = function()
 
     if #rows == 0 then
         emptyLabel:SetWidth(math.max(rowWidth - 12, 50))
-        emptyLabel:SetText(sessionView
-            and "No mobs killed this session yet.\nKill something to start tracking."
-            or "No kills recorded yet.")
+        if filtered then
+            emptyLabel:SetText("No mobs match your search.")
+        elseif sessionView then
+            emptyLabel:SetText("No mobs killed this session yet.\nKill something to start tracking.")
+        else
+            emptyLabel:SetText("No kills recorded yet.")
+        end
         emptyLabel:Show()
         content:SetHeight(50)
     else
         emptyLabel:Hide()
         content:SetHeight(math.max(y, 1))
+    end
+end
+
+local function ScheduleSearch()
+    searchToken = searchToken + 1
+    local token = searchToken
+    if C_Timer and C_Timer.After then
+        C_Timer.After(SEARCH_DEBOUNCE, function()
+            if token == searchToken then Refresh() end
+        end)
+    else
+        Refresh()
     end
 end
 
@@ -931,8 +991,19 @@ local function CreatePanel(parent)
 
     panel = CreateFrame("Frame", nil, parent)
 
+    searchFrame, searchBox = Util.CreateSearchBox(panel, {
+        maxLetters = 80,
+        placeholder = "Search mob names...",
+        onChanged = function()
+            ScheduleSearch()
+        end,
+        onEnter = function()
+            Refresh()
+        end,
+    })
+
     checkbox = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-    checkbox:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    checkbox:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -26)
     checkbox:SetSize(20, 20)
     checkbox:SetChecked(true)
     checkbox:SetScript("OnClick", function(self)
@@ -958,19 +1029,19 @@ local function CreatePanel(parent)
     checkLabel:SetText("Session loot")
 
     totalsLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalsLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -24)
-    totalsLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -24)
+    totalsLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -50)
+    totalsLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -50)
     totalsLabel:SetJustifyH("LEFT")
     totalsLabel:SetWordWrap(false)
 
     totalsAuctionLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalsAuctionLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -38)
-    totalsAuctionLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -38)
+    totalsAuctionLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -64)
+    totalsAuctionLabel:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -64)
     totalsAuctionLabel:SetJustifyH("LEFT")
     totalsAuctionLabel:SetWordWrap(false)
 
     scroll, content = Util.CreateScrollPanel(panel, {
-        top = 56,
+        top = 82,
         bottom = 22,
         barInset = 16,
         contentWidth = FRAME_WIDTH - 38,

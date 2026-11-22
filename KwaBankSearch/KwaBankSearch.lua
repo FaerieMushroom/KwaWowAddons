@@ -41,6 +41,33 @@ local RARITY_ALIASES = {
     orange = 5,
 }
 
+local RARITY_FIELD = {
+    token = "rarity",
+    minKey = "rarityMin",
+    maxKey = "rarityMax",
+    value = "rarity",
+    parse = function(value)
+        return tonumber(value) or RARITY_ALIASES[value]
+    end,
+}
+
+local COUNT_FIELD = {
+    token = "count",
+    minKey = "countMin",
+    maxKey = "countMax",
+    value = "count",
+}
+
+local FILTER_SPEC = {
+    fields = { RARITY_FIELD, COUNT_FIELD },
+    aliases = RARITY_ALIASES,
+    aliasField = RARITY_FIELD,
+    flags = {
+        ["@recipe"] = "recipes",
+        ["@recipes"] = "recipes",
+    },
+}
+
 local RECIPE_PREFIXES = {
     "recipe:",
     "pattern:",
@@ -297,72 +324,7 @@ local function ScheduleScan()
 end
 
 local function ParseQuery(text)
-    local parsed = { terms = {}, recipes = false }
-    text = (text or ""):lower()
-
-    local function raiseMin(field, value)
-        if not parsed[field] or value > parsed[field] then parsed[field] = value end
-    end
-    local function lowerMax(field, value)
-        if not parsed[field] or value < parsed[field] then parsed[field] = value end
-    end
-    local function applyComparison(kind, op, value)
-        if kind == "rarity" then
-            local q = tonumber(value) or RARITY_ALIASES[value]
-            if not q then return end
-            if op == "=" then
-                raiseMin("rarityMin", q)
-                lowerMax("rarityMax", q)
-            elseif op == ">" then
-                raiseMin("rarityMin", q + 1)
-            elseif op == ">=" then
-                raiseMin("rarityMin", q)
-            elseif op == "<" then
-                lowerMax("rarityMax", q - 1)
-            elseif op == "<=" then
-                lowerMax("rarityMax", q)
-            end
-        else
-            local n = tonumber(value)
-            if not n then return end
-            if op == "=" then
-                raiseMin("countMin", n)
-                lowerMax("countMax", n)
-            elseif op == ">" then
-                raiseMin("countMin", n + 1)
-            elseif op == ">=" then
-                raiseMin("countMin", n)
-            elseif op == "<" then
-                lowerMax("countMax", n - 1)
-            elseif op == "<=" then
-                lowerMax("countMax", n)
-            end
-        end
-    end
-
-    for token in text:gmatch("%S+") do
-        if token == "@recipe" or token == "@recipes" then
-            parsed.recipes = true
-        else
-            local alias = token:match("^@(%a+)$")
-            local op, value = token:match("^rarity([<>=]+)([%w_]+)$")
-            local countOp, countValue = token:match("^count([<>=]+)(%d+)$")
-
-            if alias and RARITY_ALIASES[alias] then
-                local q = RARITY_ALIASES[alias]
-                raiseMin("rarityMin", q)
-                lowerMax("rarityMax", q)
-            elseif op then
-                applyComparison("rarity", op, value)
-            elseif countOp then
-                applyComparison("count", countOp, countValue)
-            else
-                parsed.terms[#parsed.terms + 1] = token
-            end
-        end
-    end
-
-    return parsed
+    return Util.ParseFilterQuery(text, FILTER_SPEC)
 end
 
 local function IsRecipe(meta)
@@ -377,25 +339,15 @@ local function IsRecipe(meta)
     return false
 end
 
-local function MatchesSearch(meta, count, parsed)
-    if parsed.rarityMin or parsed.rarityMax then
-        local quality = tonumber(meta.quality) or 0
-        if parsed.rarityMin and quality < parsed.rarityMin then return false end
-        if parsed.rarityMax and quality > parsed.rarityMax then return false end
-    end
+local MATCH_VALUES = {}
 
-    if parsed.countMin and count < parsed.countMin then return false end
-    if parsed.countMax and count > parsed.countMax then return false end
+local function MatchesSearch(meta, count, parsed)
     if parsed.recipes and not IsRecipe(meta) then return false end
 
-    if #parsed.terms > 0 then
-        local name = meta.nameLower or ""
-        for _, term in ipairs(parsed.terms) do
-            if not name:find(term, 1, true) then return false end
-        end
-    end
-
-    return true
+    MATCH_VALUES.nameLower = meta.nameLower
+    MATCH_VALUES.rarity = tonumber(meta.quality) or 0
+    MATCH_VALUES.count = count
+    return Util.MatchesFilter(parsed, MATCH_VALUES)
 end
 
 local function CharacterLabel(char, key)
