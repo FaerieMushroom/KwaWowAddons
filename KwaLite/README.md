@@ -36,6 +36,7 @@ should use it instead of copying helpers. It provides:
 - `Util.SetHoverScripts(frame)` – attach standard OnEnter/OnLeave show/hide scripts.
 - `Util.SetHoverBackground(frame, alpha)` – create hover background + scripts in one call.
 - `Util.CreateSearchBox(parent, options)` – backdropped search field with placeholder; returns `frame, box, placeholder, updatePlaceholder`.
+- `Util.CreateItemLoader(options)` – staggered `RequestItemData` loader for lists of item IDs (`budget`/`interval`/`retryInterval`/`maxAttempts`/`scanBudget`/`isReady`/`isActive`/`onRefresh`); `Start`, `Stop`, `Reset`, `SetItems`, `AddItems`, `MarkDirty`, `Requeue`. Retries dropped requests, so call `Requeue` from item-data events.
 - `Util.ParseMoney(text)` – parses `1g 50s 25c` (or plain copper) into copper.
 - `Util.ParseFilterQuery(text, spec)` – shared filter syntax (`kills>5`, `vendor>=1g`, `count<3`, `@recipe`, free-text terms). `spec.fields` defines token prefixes and min/max keys; `spec.aliases`/`spec.aliasField` add exact-match aliases; `spec.flags` adds literal flags.
 - `Util.MatchesFilter(parsed, values)` – evaluates a parsed query against a values table (`values.nameLower` plus one key per field).

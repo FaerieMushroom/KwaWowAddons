@@ -50,84 +50,38 @@ local Refresh
 
 -- Item data arrives asynchronously. Load visible items a few at a time, then
 -- refresh on a short throttle so names fill in without freezing the panel.
-local ITEM_LOAD_BUDGET = 10
-local ITEM_LOAD_REFRESH = 0.25
-
-local loaderItems = {}
-local loaderSeen = {}
-local loaderAttempted = {}
-local loaderPos = 0
+local itemLoader
 local loaderView
-
-local loaderJob = CreateFrame("Frame")
-loaderJob:Hide()
-loaderJob.elapsed = 0
-loaderJob.dirty = false
-
-local function RequestItem(itemID)
-    if loaderAttempted[itemID] then return false end
-    if GetItemInfo and GetItemInfo(itemID) then return false end
-    loaderAttempted[itemID] = true
-    Util.RequestItemData(itemID)
-    return true
-end
+local loaderBatch = {}
 
 local function ResetItemLoader()
-    loaderItems = {}
-    loaderSeen = {}
-    loaderAttempted = {}
-    loaderPos = 0
+    if itemLoader then
+        itemLoader:Reset()
+    end
     loaderView = nil
-    loaderJob:Hide()
-    loaderJob.elapsed = 0
-    loaderJob.dirty = false
 end
 
-loaderJob:SetScript("OnUpdate", function(self, elapsed)
-    if not panel or not panel:IsShown() then
-        self:Hide()
-        return
-    end
-
-    local requested = 0
-    while loaderPos < #loaderItems and requested < ITEM_LOAD_BUDGET do
-        loaderPos = loaderPos + 1
-        if RequestItem(loaderItems[loaderPos]) then
-            requested = requested + 1
-            self.dirty = true
-        end
-    end
-
-    self.elapsed = (self.elapsed or 0) + elapsed
-    if self.dirty and self.elapsed >= ITEM_LOAD_REFRESH then
-        self.elapsed = 0
-        self.dirty = false
+itemLoader = Util.CreateItemLoader({
+    isActive = function()
+        return panel and panel:IsShown()
+    end,
+    onRefresh = function()
         Refresh()
-    end
-
-    if loaderPos >= #loaderItems and not self.dirty then
-        self:Hide()
-    end
-end)
+    end,
+})
 
 -- Late item data (for example tooltips loading other items) should still
--- update names while the panel is visible.
+-- update names while the panel is visible. Some clients only fire one of
+-- these events, so listen to both and requeue anything still missing.
 local itemEvents = CreateFrame("Frame")
 itemEvents:Show()
-pcall(itemEvents.RegisterEvent, itemEvents, "GET_ITEM_INFO_RECEIVED")
+for _, event in ipairs({ "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT" }) do
+    pcall(itemEvents.RegisterEvent, itemEvents, event)
+end
 
-local itemRefreshPending = false
 itemEvents:SetScript("OnEvent", function()
-    if not panel or not panel:IsShown() or itemRefreshPending then return end
-    itemRefreshPending = true
-    if C_Timer and C_Timer.After then
-        C_Timer.After(ITEM_LOAD_REFRESH, function()
-            itemRefreshPending = false
-            if panel and panel:IsShown() then Refresh() end
-        end)
-    else
-        itemRefreshPending = false
-        Refresh()
+    if panel and panel:IsShown() then
+        itemLoader:Requeue()
     end
 end)
 
@@ -1029,33 +983,25 @@ Refresh = function()
 
     local viewKey = sessionView and "session" or "overall"
     if viewKey ~= loaderView then
-        loaderItems = {}
-        loaderSeen = {}
-        loaderAttempted = {}
-        loaderPos = 0
+        itemLoader:Reset()
         loaderView = viewKey
-        loaderJob.elapsed = 0
-        loaderJob.dirty = false
     end
 
+    local batchCount = 0
     for index = 1, #rows do
         local items = rows[index].items
         if items then
             for itemID in pairs(items) do
                 local numericID = tonumber(itemID)
-                if numericID and not loaderSeen[numericID] then
-                    loaderSeen[numericID] = true
-                    loaderItems[#loaderItems + 1] = numericID
+                if numericID then
+                    loaderBatch[batchCount + 1] = numericID
+                    batchCount = batchCount + 1
                 end
             end
         end
     end
-
-    if loaderPos < #loaderItems then
-        loaderJob:Show()
-    else
-        loaderJob:Hide()
-    end
+    itemLoader:AddItems(loaderBatch, batchCount)
+    itemLoader:Start()
 
     local y = 0
     for index = 1, #rows do
@@ -1159,6 +1105,14 @@ local function CreatePanel(parent)
         barInset = 16,
         contentWidth = FRAME_WIDTH - 38,
     })
+
+    -- Item data sometimes arrives without an event on this client. Recheck the
+    -- names (throttled by the loader) whenever the list is scrolled.
+    pcall(scroll.HookScript, scroll, "OnVerticalScroll", function()
+        if panel and panel:IsShown() then
+            itemLoader:MarkDirty()
+        end
+    end)
 
     emptyLabel = content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     emptyLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 6, -6)

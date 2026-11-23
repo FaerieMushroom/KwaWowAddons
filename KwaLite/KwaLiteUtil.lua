@@ -57,6 +57,12 @@ function Util.RequestItemData(itemID)
     end
     if type(_G.RequestLoadItemDataByID) == "function" then
         pcall(_G.RequestLoadItemDataByID, itemID)
+        return
+    end
+    -- Classic clients load item data as a side effect of GetItemInfo.
+    local getInfo = Util.GetItemInfoAPI()
+    if type(getInfo) == "function" then
+        pcall(getInfo, itemID)
     end
 end
 
@@ -315,6 +321,196 @@ function Util.CreateItemRow(parent, options)
     row.name:SetWordWrap(false)
 
     return row
+end
+
+-- Staggered item-data loader.
+--
+-- Requests item data for a list of item IDs a few at a time and calls
+-- onRefresh on a throttle, so large item lists fill in without a stall.
+--
+-- options:
+--   budget         items requested per frame (default 10)
+--   interval       seconds between onRefresh calls (default 0.25)
+--   retryInterval  seconds before an item that is still missing is requested
+--                  again (default 2)
+--   maxAttempts    requests per item before giving up (default 4)
+--   scanBudget     items checked per frame while skipping cached ones (default 500)
+--   isActive       optional function; loader hides itself when it returns false
+--   isReady        optional function(id) -> true when the item is cached
+--   onRefresh      optional function() called after requests were made
+--
+-- Returns loader with Start(), Stop(), Reset(), SetItems(ids),
+-- AddItems(ids[, count]), MarkDirty(), Requeue() and IsRunning().
+--
+-- A first request can be dropped while the client is busy, so unready items
+-- are retried a few times instead of being marked permanently attempted.
+-- Requeue() restarts the scan immediately (call it from GET_ITEM_INFO_RECEIVED
+-- / ITEM_DATA_LOAD_RESULT so items the client failed to load get another try).
+function Util.CreateItemLoader(options)
+    options = options or {}
+    local budget = options.budget or 10
+    local interval = options.interval or 0.25
+    local retryInterval = options.retryInterval or 2
+    local maxAttempts = options.maxAttempts or 4
+    local scanBudget = options.scanBudget or 500
+
+    local frame = CreateFrame("Frame")
+    frame:Hide()
+
+    local loader = {
+        items = {},
+        seen = {},
+        attempts = {},
+        lastRequest = {},
+        pos = 0,
+        elapsed = 0,
+        clock = 0,
+        waitElapsed = 0,
+        dirty = false,
+    }
+
+    local getItemInfo = Util.GetItemInfoAPI()
+    local function IsReady(itemID)
+        if options.isReady then return options.isReady(itemID) end
+        return getItemInfo and getItemInfo(itemID) ~= nil or false
+    end
+
+    local function Request(itemID)
+        if IsReady(itemID) then return false end
+
+        local attempts = loader.attempts[itemID] or 0
+        if attempts >= maxAttempts then return false end
+
+        local last = loader.lastRequest[itemID]
+        if last and loader.clock - last < retryInterval then return false end
+
+        loader.attempts[itemID] = attempts + 1
+        loader.lastRequest[itemID] = loader.clock
+        Util.RequestItemData(itemID)
+        return true
+    end
+
+    local function AddUnique(list, count)
+        if list == nil then return end
+        count = count or #list
+        for index = 1, count do
+            local itemID = list[index]
+            if type(itemID) == "number" and not loader.seen[itemID] then
+                loader.seen[itemID] = true
+                loader.items[#loader.items + 1] = itemID
+            end
+        end
+    end
+
+    function loader:SetItems(items, count)
+        self.items = {}
+        self.seen = {}
+        self.attempts = {}
+        self.lastRequest = {}
+        self.pos = 0
+        self.dirty = false
+        self.elapsed = 0
+        self.waitElapsed = 0
+        AddUnique(items, count)
+    end
+
+    function loader:AddItems(items, count)
+        AddUnique(items, count)
+    end
+
+    function loader:Start()
+        if self.pos < #self.items or self.dirty then
+            frame:Show()
+        end
+    end
+
+    function loader:Stop()
+        frame:Hide()
+    end
+
+    function loader:Reset()
+        self:SetItems(nil)
+        frame:Hide()
+    end
+
+    function loader:MarkDirty()
+        self.dirty = true
+        self.elapsed = 0
+        frame:Show()
+    end
+
+    -- Restart the scan so items that are still missing are requested again.
+    -- While a scan is already in progress, just keep it running so repeated
+    -- events cannot keep resetting it to the start of a large list.
+    function loader:Requeue()
+        if self.pos >= #self.items then
+            self.pos = 0
+        end
+        self.waitElapsed = 0
+        self.dirty = true
+        self.elapsed = 0
+        frame:Show()
+    end
+
+    function loader:IsRunning()
+        return frame:IsShown()
+    end
+
+    frame:SetScript("OnUpdate", function(_, elapsed)
+        elapsed = elapsed or 0
+        loader.clock = loader.clock + elapsed
+
+        if options.isActive and not options.isActive() then
+            frame:Hide()
+            return
+        end
+
+        local requested, scanned = 0, 0
+        while loader.pos < #loader.items
+            and requested < budget
+            and scanned < scanBudget do
+            loader.pos = loader.pos + 1
+            scanned = scanned + 1
+            if Request(loader.items[loader.pos]) then
+                requested = requested + 1
+                loader.dirty = true
+            end
+        end
+
+        loader.elapsed = loader.elapsed + elapsed
+        if loader.dirty and loader.elapsed >= interval then
+            loader.elapsed = 0
+            loader.dirty = false
+            if options.onRefresh then options.onRefresh() end
+        end
+
+        if loader.pos >= #loader.items and not loader.dirty then
+            -- Hold the frame open until the last retry window has passed so
+            -- dropped requests get another chance, then hide it.
+            loader.waitElapsed = loader.waitElapsed + elapsed
+            if loader.waitElapsed >= retryInterval then
+                loader.waitElapsed = 0
+                local again = false
+                for index = 1, #loader.items do
+                    local itemID = loader.items[index]
+                    local attempts = loader.attempts[itemID] or 0
+                    if attempts > 0 and attempts < maxAttempts and not IsReady(itemID) then
+                        again = true
+                        break
+                    end
+                end
+                if again then
+                    loader.pos = 0
+                else
+                    frame:Hide()
+                end
+            end
+        else
+            loader.waitElapsed = 0
+        end
+    end)
+
+    return loader
 end
 
 -- A backdropped search field with placeholder text.

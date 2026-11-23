@@ -57,8 +57,6 @@ local auctionCache = {}
 local itemInfoCache = {}
 local itemIDList
 local itemIDDirty = true
-local loaderPos = 0
-local searchDirty = false
 local recipeIndex
 local recipeScanAt
 
@@ -66,6 +64,11 @@ local UpdateMode
 local RefreshBrowse
 local RefreshDetail
 local StartSearch
+
+local itemLoader
+
+-- Created after IsItemCached is available so it can use it as the cached
+-- check when deciding whether an item needs loading.
 
 local function EnsureDB()
     if type(KwaTrackerDB) ~= "table" then KwaTrackerDB = {} end
@@ -105,10 +108,26 @@ local function ItemData(itemID)
 end
 
 local function IsItemCached(itemID)
-    if not (C_Item and C_Item.IsItemDataCachedByID) then return true end
-    local ok, cached = pcall(C_Item.IsItemDataCachedByID, itemID)
-    return ok and cached or false
+    if C_Item and C_Item.IsItemDataCachedByID then
+        local ok, cached = pcall(C_Item.IsItemDataCachedByID, itemID)
+        if ok and cached then return true end
+    end
+    -- IsItemDataCachedByID is Mainline-only on some clients; fall back to the
+    -- plain item lookup so the loader still requests missing items.
+    return GetItemInfo and GetItemInfo(itemID) ~= nil or false
 end
+
+itemLoader = Util.CreateItemLoader({
+    budget = 20,
+    interval = 0.25,
+    isReady = IsItemCached,
+    isActive = function()
+        return panel and panel:IsShown() and mode == "browse"
+    end,
+    onRefresh = function()
+        RefreshBrowse(true)
+    end,
+})
 
 -- Only resolves names for items the client already has, so searching never
 -- floods the item cache. Missing items are loaded a few at a time elsewhere.
@@ -201,6 +220,18 @@ local function GetItemIDList()
     itemIDList = list
     itemIDDirty = false
     return list
+end
+
+local function CollectItemIDs()
+    local list = GetItemIDList()
+    local ids = {}
+    for index = 1, #list do
+        local itemID = list[index].id
+        if type(itemID) == "number" then
+            ids[#ids + 1] = itemID
+        end
+    end
+    return ids
 end
 
 local function ItemName(itemID, info)
@@ -722,55 +753,11 @@ local function Refresh()
     end
 end
 
--- Item data is loaded a few at a time, so searching stays responsive even
--- with a large loot history. Newly loaded names are folded into the current
--- results on a short throttle.
-local LOAD_BUDGET = 20
-local searchJob = CreateFrame("Frame")
-searchJob:Hide()
-searchJob.searchElapsed = 0
-
-local function RequestItemData(itemID)
-    if IsItemCached(itemID) then return false end
-    if GetItemInfo then GetItemInfo(itemID) end
-    return true
-end
-
 StartSearch = function()
-    loaderPos = 0
-    searchDirty = false
-    searchJob.searchElapsed = 0
+    itemLoader:SetItems(CollectItemIDs())
+    itemLoader:Start()
     RefreshBrowse()
-    searchJob:Show()
 end
-
-searchJob:SetScript("OnUpdate", function(self, elapsed)
-    if not panel or not panel:IsShown() or mode ~= "browse" then
-        self:Hide()
-        return
-    end
-
-    local list = GetItemIDList()
-    local checked, requested = 0, 0
-    while loaderPos < #list and checked < 500 and requested < LOAD_BUDGET do
-        loaderPos = loaderPos + 1
-        checked = checked + 1
-        if RequestItemData(list[loaderPos].id) then
-            requested = requested + 1
-        end
-    end
-
-    self.searchElapsed = self.searchElapsed + elapsed
-    if searchDirty and self.searchElapsed >= 0.25 then
-        self.searchElapsed = 0
-        searchDirty = false
-        RefreshBrowse(true)
-    end
-
-    if loaderPos >= #list and not searchDirty then
-        self:Hide()
-    end
-end)
 
 
 local function SortLabel(id)
@@ -1001,6 +988,7 @@ local function CreatePanel(parent)
         selectedID = nil
         UpdateMode()
         RefreshBrowse()
+        itemLoader:Start()
         if browseScroll then browseScroll:SetVerticalScroll(0) end
     end)
     backButton:SetScript("OnEnter", function()
@@ -1098,6 +1086,7 @@ for _, event in ipairs({
     "TRADE_SKILL_SHOW",
     "TRADE_SKILL_UPDATE",
     "GET_ITEM_INFO_RECEIVED",
+    "ITEM_DATA_LOAD_RESULT",
 }) do
     pcall(eventFrame.RegisterEvent, eventFrame, event)
 end
@@ -1106,19 +1095,17 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         ScanRecipes(true)
     elseif event == "TRADE_SKILL_UPDATE" then
         ScanRecipes(false)
-    elseif event == "GET_ITEM_INFO_RECEIVED" then
+    elseif event == "GET_ITEM_INFO_RECEIVED" or event == "ITEM_DATA_LOAD_RESULT" then
         local itemID = tonumber(arg1)
         local tracked = itemID and itemIndexCache and itemIndexCache[itemID]
         if tracked then
             itemInfoCache[itemID] = nil
-            searchDirty = true
         end
         if tracked and panel and panel:IsShown() then
             if mode == "detail" then
                 RefreshDetail()
             else
-                searchJob.searchElapsed = 0
-                searchJob:Show()
+                itemLoader:Requeue()
             end
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -1134,10 +1121,8 @@ KKK.ItemLookup = {
         if mode == "detail" then
             RefreshDetail()
         else
-            loaderPos = 0
-            searchDirty = true
-            searchJob.searchElapsed = 0
-            searchJob:Show()
+            itemLoader:SetItems(CollectItemIDs())
+            itemLoader:MarkDirty()
         end
     end,
 }
