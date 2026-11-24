@@ -28,6 +28,7 @@ local registered = false
 local state = {
     petName = nil,
     petLevel = nil,
+    playerLevel = nil,
     family = nil,
     known = {},
     petRanks = {},
@@ -45,6 +46,8 @@ local function ReadPet()
     state.petName = SafeCall(UnitName, "pet")
     state.petLevel = SafeCall(UnitLevel, "pet")
     if state.petLevel and state.petLevel <= 0 then state.petLevel = nil end
+    state.playerLevel = SafeCall(UnitLevel, "player")
+    if state.playerLevel and state.playerLevel <= 0 then state.playerLevel = nil end
     state.family = SafeCall(UnitCreatureFamily, "pet")
     if state.family == "" then state.family = nil end
 end
@@ -257,24 +260,32 @@ local function ClassifyAbilities()
             known[#known + 1] = ability
         end
 
-        -- A pet that knows rank 4 should still see rank 5 as an upgrade in
-        -- the unlearned/tame section once it is high enough level.
-        local best = BestRank(ability, state.petLevel)
-        local bestNumber = RankNumber(best)
         local petNumber = petKnown and petKnown.rank or 0
-        local showUpgrade
-        if petNumber > 0 then
-            showUpgrade = bestNumber > petNumber
-        else
-            showUpgrade = not isKnown
-        end
+        local best = BestRank(ability, state.petLevel)
 
-        if showUpgrade then
-            unlearned[#unlearned + 1] = ability
-            if best and best.trainer then
+        if best and best.trainer then
+            -- Trainer skills are bought one rank at a time, so keep a single
+            -- row for the best rank the pet qualifies for.
+            if RankNumber(best) > petNumber then
+                unlearned[#unlearned + 1] = ability
                 trainer[#trainer + 1] = ability
-            else
-                tame[#tame + 1] = ability
+            end
+        else
+            -- Tameable skills are learned by taming pets of the right level,
+            -- so list every unlearned rank as its own row. The rank the pet
+            -- already has stays in the known section only. You can only tame a
+            -- pet up to your own level, so filter by player level, not pet level.
+            local playerLevel = state.playerLevel
+            local ranksAdded = false
+            for _, rank in ipairs(ability.ranks or {}) do
+                if RankNumber(rank) > petNumber
+                    and (not playerLevel or not rank.level or rank.level <= playerLevel) then
+                    tame[#tame + 1] = { ability = ability, rank = rank }
+                    ranksAdded = true
+                end
+            end
+            if ranksAdded then
+                unlearned[#unlearned + 1] = ability
             end
         end
     end
@@ -592,8 +603,8 @@ local function BuildContent()
 
             if #tame > 0 then
                 y = SectionHeader(y, "Unlearned tame skills (" .. #tame .. ")")
-                for _, ability in ipairs(tame) do
-                    y = AddSkillRow(y, ability, BestRank(ability, state.petLevel), "unlearned")
+                for _, entry in ipairs(tame) do
+                    y = AddSkillRow(y, entry.ability, entry.rank, "unlearned")
                 end
                 y = y + 4
             end

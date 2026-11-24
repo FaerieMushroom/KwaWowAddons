@@ -270,6 +270,29 @@ end
 local function DrawGraph(history)
     if not graphFrame then return end
 
+    local width = graphFrame:GetWidth() or 0
+    local height = graphFrame:GetHeight() or 0
+    if width < 60 then width = 250 end
+    if height < 80 then height = 180 end
+
+    -- Redrawing hides the hover tooltip. Skip the redraw when the visible
+    -- history and graph size have not changed; otherwise background item
+    -- resolution can hide/show the tooltip every chunk (visible flicker).
+    local signature
+    if not history or #history == 0 then
+        signature = "empty:" .. width .. "x" .. height
+    else
+        local parts = { "history:" .. width .. "x" .. height }
+        for index = 1, #history do
+            local point = history[index]
+            parts[#parts + 1] = tostring(point.day or point.date)
+                .. ":" .. tostring(point.minSeen) .. ":" .. tostring(point.maxSeen)
+        end
+        signature = table.concat(parts, "|")
+    end
+    if graphFrame.graphSignature == signature then return end
+    graphFrame.graphSignature = signature
+
     graphLineCount = 0
     graphPoints = {}
     if HideGraphHover then HideGraphHover() end
@@ -286,11 +309,6 @@ local function DrawGraph(history)
     end
 
     graphFrame.empty:Hide()
-
-    local width = graphFrame:GetWidth() or 0
-    local height = graphFrame:GetHeight() or 0
-    if width < 60 then width = 250 end
-    if height < 80 then height = 180 end
 
     local left, right = 8, width - 8
     local bottom, top = 18, height - 24
@@ -370,6 +388,12 @@ local function DrawGraph(history)
     SetGraphLabel(graphLabels.minimum, FormatPrice(math.floor(axisMin)))
     SetGraphLabel(graphLabels.firstDate, tostring(history[1].date or ""))
     SetGraphLabel(graphLabels.lastDate, tostring(history[#history].date or ""))
+
+    -- A real data change hid the hover while redrawing; put it back
+    -- immediately so the tooltip does not blink for a frame.
+    if graphFrame.hovered and graphFrame.refreshHover then
+        graphFrame.refreshHover()
+    end
 end
 
 local function SetLabel(fontString, label, value)
@@ -512,13 +536,34 @@ local function CreateDetailPage()
         if graphFrame.hoverLine then graphFrame.hoverLine:Hide() end
         if graphFrame.hoverLow then graphFrame.hoverLow:Hide() end
         if graphFrame.hoverHigh then graphFrame.hoverHigh:Hide() end
+        if graphFrame.tipAnchor then graphFrame.tipAnchor:Hide() end
         GameTooltip:Hide()
     end
+
+    -- Anchor the tooltip next to the hovered point instead of under the
+    -- cursor; a cursor-anchored tooltip can steal the mouse from the hover
+    -- frame and hide/show itself every frame.
+    graphFrame.tipAnchor = CreateFrame("Frame", nil, graphFrame)
+    graphFrame.tipAnchor:SetSize(1, 1)
+    graphFrame.tipAnchor:Hide()
 
     graphFrame.hover = CreateFrame("Frame", nil, graphFrame)
     graphFrame.hover:SetAllPoints(graphFrame)
     graphFrame.hover:EnableMouse(true)
     graphFrame.hover:SetFrameLevel(graphFrame:GetFrameLevel() + 3)
+
+    local function CursorInGraph()
+        local scale = graphFrame.hover:GetEffectiveScale() or 1
+        local cursorX, cursorY = GetCursorPosition()
+        local left, bottom = graphFrame.hover:GetLeft(), graphFrame.hover:GetBottom()
+        local width, height = graphFrame.hover:GetWidth(), graphFrame.hover:GetHeight()
+        if not (cursorX and cursorY and left and bottom and width and height) then
+            return true
+        end
+        local x = cursorX / scale - left
+        local y = cursorY / scale - bottom
+        return x >= 0 and x <= width and y >= 0 and y <= height
+    end
 
     local function UpdateGraphHover()
         if not graphFrame.hovered then return end
@@ -566,7 +611,11 @@ local function CreateDetailPage()
         graphFrame.hoverHigh:SetPoint("CENTER", graphFrame, "BOTTOMLEFT", point.x, point.yMax)
         graphFrame.hoverHigh:Show()
 
-        GameTooltip:SetOwner(graphFrame.hover, "ANCHOR_CURSOR")
+        graphFrame.tipAnchor:ClearAllPoints()
+        graphFrame.tipAnchor:SetPoint("CENTER", graphFrame, "BOTTOMLEFT", point.x, point.yMin)
+        graphFrame.tipAnchor:Show()
+
+        GameTooltip:SetOwner(graphFrame.tipAnchor, "ANCHOR_RIGHT")
         GameTooltip:ClearLines()
         GameTooltip:AddLine(tostring(point.date or "Price history"), 1, 0.82, 0)
         GameTooltip:AddDoubleLine("Low:", FormatPrice(point.minSeen),
@@ -576,12 +625,16 @@ local function CreateDetailPage()
         GameTooltip:Show()
     end
 
+    graphFrame.refreshHover = UpdateGraphHover
+
     graphFrame.hover:SetScript("OnEnter", function()
         graphFrame.hovered = true
-        graphFrame.hoverIndex = nil
         UpdateGraphHover()
     end)
     graphFrame.hover:SetScript("OnLeave", function()
+        -- Tooltips and other frames can briefly take the mouse, which would
+        -- otherwise end the hover and rebuild the tooltip every frame.
+        if CursorInGraph() then return end
         graphFrame.hovered = false
         HideGraphHover()
     end)
@@ -925,6 +978,7 @@ resolver:SetScript("OnUpdate", function(_, elapsed)
     resolver.elapsed = 0
 
     local processed = 0
+    local selectedResolved = false
     while resolveHead <= #resolveQueue and processed < RESOLVE_CHUNK do
         local itemID = resolveQueue[resolveHead]
         resolveHead = resolveHead + 1
@@ -935,6 +989,9 @@ resolver:SetScript("OnUpdate", function(_, elapsed)
             if meta then
                 itemMeta[itemID] = meta
                 needsResolveRefresh = true
+                if detailMode and itemID == selectedItemID then
+                    selectedResolved = true
+                end
             else
                 -- The client does not always load item data just by calling
                 -- GetItemInfo. Ask for it explicitly; GET_ITEM_INFO_RECEIVED
@@ -946,11 +1003,13 @@ resolver:SetScript("OnUpdate", function(_, elapsed)
 
     -- Refresh after every resolved chunk, not just when the whole queue is
     -- done, so newly resolvable items show up while the rest still load.
+    -- While viewing an item, only redraw when that item's own meta resolved;
+    -- other items resolving behind the scenes must not disturb the graph.
     if needsResolveRefresh then
         needsResolveRefresh = false
         if panel and panel:IsShown() then
             if detailMode and selectedItemID then
-                RefreshDetail()
+                if selectedResolved then RefreshDetail() end
             elseif currentQuery ~= "" then
                 RunSearch()
             end
