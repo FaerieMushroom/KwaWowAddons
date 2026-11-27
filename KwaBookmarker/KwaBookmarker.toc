@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: KwaBookmarker (WoW Forever)
+## Notes: Keeps KwaMarker and KwaTarget macros in sync with a tracked mob list.
+## SavedVariables: KwaBookmarkerDB
+## Dependencies: KwaLite
+
+KwaBookmarker.lua

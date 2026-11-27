@@ -1,1 +1,3 @@
 not enough runes would be amazing but probably unrealistic...
+
+Droprate sharing between addon users: planned, see KwaDropShare/PLAN.md (not started).

@@ -15,6 +15,7 @@ ADDONS=(
     "KwaUnitLabeler"
     "KwaProfiler"
     "KwaBankSearch"
+    "KwaBookmarker"
 )
 
 for addon in "${ADDONS[@]}"; do
