@@ -256,7 +256,9 @@ local function ShowMobTooltip(entryWidget)
     tooltip:AddLine(" ")
     AddDoubleLine(tooltip, "Kills (session):", tostring(row.sessionKills or 0))
     AddDoubleLine(tooltip, "Kills (total):", tostring(row.totalKills or 0))
-    AddDoubleLine(tooltip, "Coin dropped:", FormatMoney(row.coin or 0))
+    if (row.coin or 0) > 0 then
+        AddDoubleLine(tooltip, "Coin dropped:", FormatMoney(row.coin))
+    end
     AddDoubleLine(tooltip, "Vendor total:", FormatMoney(row.vendor or 0))
     if HasAuctionData() then
         AddDoubleLine(tooltip, "Auction total:", FormatMoney(SumAuction(row.items) + (row.coin or 0)))
@@ -627,13 +629,21 @@ local function RenderEntry(entry, row, y)
     entry.kills:SetText("|cff9d9d9dKills:|r " .. tostring(killCount))
 
     entry.vendor:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(row.vendor or 0))
+    local coin = row.coin or 0
+    if coin > 0 then
+        entry.coin:SetText("|cff9d9d9dCoin:|r " .. FormatMoney(coin))
+        entry.coin:Show()
+    else
+        entry.coin:Hide()
+    end
     if HasAuctionData() then
-        entry.auction:SetText("|cff9d9d9dAuction:|r " .. FormatMoney(SumAuction(row.items) + (row.coin or 0)))
+        entry.auction:ClearAllPoints()
+        entry.auction:SetPoint("TOPLEFT", entry, "TOPLEFT", 7, coin > 0 and -48 or -34)
+        entry.auction:SetText("|cff9d9d9dAuction:|r " .. FormatMoney(SumAuction(row.items) + coin))
         entry.auction:Show()
     else
         entry.auction:Hide()
     end
-    entry.coin:SetText("|cff9d9d9dCoin:|r " .. FormatMoney(row.coin or 0))
 
     for index = 1, #items do
         local itemRow = entry.itemRows[index]
