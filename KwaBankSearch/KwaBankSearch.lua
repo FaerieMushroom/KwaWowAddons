@@ -709,7 +709,7 @@ KwaLite:RegisterAddon({
     id = ADDON_ID,
     name = "Bank Search",
     icon = "Interface\\Icons\\achievement_guildperk_mobilebanking",
-    priority = 8,
+    priority = 2,
     createPanel = CreatePanel,
     refresh = NS.Refresh,
 })

@@ -596,7 +596,7 @@ KwaLite:RegisterAddon({
     id = "KwaBookmarker",
     name = "Bookmarker",
     icon = PLUGIN_ICON,
-    priority = 9,
+    priority = 8,
     createPanel = CreatePanel,
     createMinimized = CreateMinimized,
     refresh = function()

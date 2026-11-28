@@ -8,7 +8,7 @@ Simple WoW addon for tracking NPC kills and item drop sources. Ported to **WoW F
 - **🧬 Species Tracking**: Logs kills by NPC species.
 - **💰 Mob value tracking**: Logs kills, displaying average vendor and auction values of that NPC.
 - **🧾 Session Loot Tracker**: `/kwa` (or `/kwalite`) opens the Kwa Lite window with a RuneLite-style loot panel showing only mobs killed this session, with per-item counts and vendor/auction totals. The search bar filters mobs by name (multiple words must all match). Searching a merged group matches any member's name, not just the representative shown on the row.
-- **📊 Kill Counter panel**: a second Kwa Lite plugin with a dropdown for **Top kills**, **Kills by species**, **Most profitable vendor**, and **Most profitable auction**.
+- **📊 Mob Statistics panel**: a second Kwa Lite plugin with a dropdown for **Top kills**, **Kills by species**, **Most profitable vendor**, and **Most profitable auction**.
 - **🔎 Item Lookup panel**: search items seen in loot by name or ID, then click one to see drop sources and rates, vendor/auction value, known crafting recipes that make it, and a **Uses** tab of recipes that consume it.
 - **💰 Drop Source Discovery**: Records items dropped by NPCs to help you find where to farm them later.
 
@@ -33,7 +33,7 @@ The first page in the Kwa Lite plugin bar lists every registered plugin.
 - Loot Tracker has settings: **Display** controls what its minimized entry shows — `Vendor`, `Auction`, or `Both` (default).
 - The Settings plugin itself is not listed, so it cannot be disabled.
 
-## 📊 Kill Counter Panel
+## 📊 Mob Statistics Panel
 A separate page in the Kwa Lite plugin bar, alongside Loot Tracker. A search bar filters by name and by `kills>N`, `vendor>1g`, or `auction>50s` (also `>=`, `<`, `<=`, `=`; vendor/auction accept `1g 50s 25c` and compare the same average-per-kill values shown in the vendor/auction views). A dropdown at the top switches views, defaulting to **Top kills**:
 - **Top kills** — total kills plus every recorded NPC ranked by kill count.
 - **Kills by species** — kills grouped by NPC species (Beast, Humanoid, Undead, and so on).

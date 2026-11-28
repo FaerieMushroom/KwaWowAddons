@@ -1132,7 +1132,7 @@ if KwaLite and KwaLite.RegisterAddon then
         id = "KwaItemLookup",
         name = "Item Lookup",
         icon = "Interface\\Icons\\INV_Misc_Spyglass_02",
-        priority = 5,
+        priority = 6,
         createPanel = CreatePanel,
         refresh = function() Refresh() end,
         showMinimizedByDefault = false,

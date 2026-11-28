@@ -544,9 +544,9 @@ KKK.KillStats = {
 if KwaLite and KwaLite.RegisterAddon then
     KwaLite:RegisterAddon({
         id = "KwaKillStats",
-        name = "Kill Counter",
+        name = "Mob Statistics",
         icon = "Interface\\Icons\\INV_Misc_Bone_01",
-        priority = 4,
+        priority = 5,
         createPanel = CreatePanel,
         refresh = function() Refresh() end,
         showMinimizedByDefault = false,

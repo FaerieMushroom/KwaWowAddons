@@ -757,7 +757,7 @@ if KwaLite and KwaLite.RegisterAddon then
         id = "KwaUnitLabeler",
         name = "Unit Labeler",
         icon = "Interface\\Icons\\INV_Misc_Head_Human_01",
-        priority = 6,
+        priority = 7,
         createPanel = CreatePanel,
         createSettings = CreateSettings,
         refresh = function()

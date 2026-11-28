@@ -579,7 +579,7 @@ KwaLite:RegisterAddon({
     id = ADDON_ID,
     name = "Profiler",
     icon = "Interface\\Icons\\inv_professions_inscription_scribesmagnifyingglass_gold",
-    priority = 7,
+    priority = 1000,
     enabledByDefault = false,
     createPanel = CreatePanel,
     refresh = function()

@@ -1066,7 +1066,7 @@ KwaLite:RegisterAddon({
     id = "KwaAuctionSearch",
     name = "Auction Search",
     icon = "Interface\\Icons\\INV_Misc_Coin_01",
-    priority = 2,
+    priority = 1,
     createPanel = CreatePanel,
     refresh = function()
         if indexDirty then BuildIndex() end

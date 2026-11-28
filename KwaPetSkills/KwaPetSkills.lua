@@ -713,7 +713,7 @@ local function TryRegister()
         id = "KwaPetSkills",
         name = "Pet Skills",
         icon = "Interface\\Icons\\ability_hunter_beasttaming",
-        priority = 3,
+        priority = 4,
         createPanel = AddonPanel,
         refresh = function() RefreshPanel() end,
     })

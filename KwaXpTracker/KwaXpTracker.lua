@@ -496,7 +496,7 @@ if KwaLite and KwaLite.RegisterAddon and KwaLite.Util then
         id = "KwaXpTracker",
         name = "XP Tracker",
         icon = "Interface\\Icons\\misc_arrowlup",
-        priority = 1,
+        priority = 3,
         createPanel = CreatePanel,
         createMinimized = CreateMinimized,
         refresh = function() RefreshPanel() end,
