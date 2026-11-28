@@ -44,9 +44,27 @@ local pendingMerge = nil
 local merges = {}
 local entryPool = {}
 local auctionCache = {}
+local auctionCacheTime = 0
+local AUCTION_CACHE_TTL = 30
+local vendorPriceCache = {}
+
+-- Virtualized list state. Only the rows near the viewport get frames.
+local currentRows = {}
+local rowOffsets = {}
+local rowHeights = {}
+local currentTotalHeight = 0
+local VISIBLE_BUFFER = 120
+local scrollRefreshQueued = false
+
+-- Totals are expensive to recompute in the overall view (every mob x item),
+-- so keep them until the underlying data or auction cache changes.
+local dataRevision = 0
+local totalsCache = { key = nil, vendor = 0, auction = 0 }
+local rowCache = { key = nil, rows = nil, source = nil }
 
 local HandleEntryClick
 local Refresh
+local RefreshVisible
 
 -- Item data arrives asynchronously. Load visible items a few at a time, then
 -- refresh on a short throttle so names fill in without freezing the panel.
@@ -66,7 +84,7 @@ itemLoader = Util.CreateItemLoader({
         return panel and panel:IsShown()
     end,
     onRefresh = function()
-        Refresh()
+        RefreshVisible()
     end,
 })
 
@@ -138,6 +156,7 @@ local function SaveMerges()
         end
     end
     db.merges = saved
+    rowCache.key = nil
 end
 
 local function LoadMerges()
@@ -173,6 +192,22 @@ local function AuctionFor(itemID)
     return price
 end
 
+local function VendorFor(itemID)
+    local key = tostring(itemID)
+    local price = vendorPriceCache[key]
+    if price == nil then
+        local numericID = tonumber(itemID)
+        if numericID then
+            local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(numericID)
+            price = sellPrice or 0
+        else
+            price = 0
+        end
+        vendorPriceCache[key] = price
+    end
+    return price
+end
+
 local function HasAuctionData()
     return KKK.HasAuctionator and KKK.HasAuctionator() or false
 end
@@ -187,11 +222,7 @@ local function SumAuction(items)
         if price <= 0 then
             -- No auction data for this item: fall back to what the vendor pays
             -- so the auction side still reflects its value.
-            local numericID = tonumber(itemID)
-            if numericID then
-                local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(numericID)
-                price = sellPrice or 0
-            end
+            price = VendorFor(itemID)
         end
         total = total + (price * count)
     end
@@ -313,6 +344,14 @@ local function MergeSelection(firstID, secondID)
     end
 
     SaveMerges()
+end
+
+local function CountPositiveItems(items)
+    local count = 0
+    for _, value in pairs(items or {}) do
+        if (tonumber(value) or 0) > 0 then count = count + 1 end
+    end
+    return count
 end
 
 local function BuildItemList(items)
@@ -536,6 +575,7 @@ local function BuildRows(source)
                 sessionKills = item.sessionKills or 0,
                 totalKills = item.totalKills or 0,
                 items = item.items or {},
+                itemCount = CountPositiveItems(item.items),
                 vendor = item.vendor or 0,
                 coin = item.coin or 0,
                 groupSize = 0,
@@ -580,6 +620,7 @@ local function BuildRows(source)
                     sessionKills = sessionKills,
                     totalKills = totalKills,
                     items = mergedItems,
+                    itemCount = CountPositiveItems(mergedItems),
                     vendor = vendor,
                     coin = coin,
                     groupSize = #memberIDs,
@@ -672,6 +713,117 @@ local function RenderEntry(entry, row, y)
     entry.outline:SetShown(highlighted and true or false)
 
     return height
+end
+
+-- Virtualized list helpers ------------------------------------------------------
+
+local function EntryHeight(itemCount)
+    if (itemCount or 0) > 0 then
+        return HEADER_HEIGHT + 4 + (itemCount * ITEM_HEIGHT)
+    end
+    return HEADER_HEIGHT + 4 + EMPTY_HEIGHT
+end
+
+local function RebuildLayout(rows)
+    currentRows = rows
+    local y = 0
+    for index = 1, #rows do
+        local height = EntryHeight(rows[index].itemCount)
+        rowOffsets[index] = y
+        rowHeights[index] = height
+        y = y + height + ROW_GAP
+    end
+    currentTotalHeight = math.max(y, 1)
+end
+
+local function FirstVisibleRow(top)
+    local low, high = 1, #currentRows
+    local result = #currentRows + 1
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        if rowOffsets[mid] + rowHeights[mid] >= top then
+            result = mid
+            high = mid - 1
+        else
+            low = mid + 1
+        end
+    end
+    return result
+end
+
+local function VisibleRange()
+    if #currentRows == 0 then return 0, -1 end
+
+    local scrollTop = scroll:GetVerticalScroll() or 0
+    local viewHeight = scroll:GetHeight() or 0
+    if viewHeight < 50 then viewHeight = 300 end
+    local first = FirstVisibleRow(math.max(0, scrollTop - VISIBLE_BUFFER))
+    if first > #currentRows then return 0, -1 end
+
+    local bottom = scrollTop + viewHeight + VISIBLE_BUFFER
+    local last = first - 1
+    while last + 1 <= #currentRows and rowOffsets[last + 1] <= bottom do
+        last = last + 1
+    end
+    if last < first then last = first end
+    return first, last
+end
+
+local function QueueVisibleItems(first, last)
+    local batchCount = 0
+    for index = first, last do
+        local items = currentRows[index] and currentRows[index].items
+        if items then
+            for itemID in pairs(items) do
+                local numericID = tonumber(itemID)
+                if numericID then
+                    batchCount = batchCount + 1
+                    loaderBatch[batchCount] = numericID
+                end
+            end
+        end
+    end
+    itemLoader:AddItems(loaderBatch, batchCount)
+    itemLoader:Start()
+end
+
+local function RenderVisible()
+    if not content then return end
+
+    local first, last = VisibleRange()
+    local poolIndex = 0
+    for index = first, last do
+        poolIndex = poolIndex + 1
+        local entry = GetEntry(poolIndex)
+        RenderEntry(entry, currentRows[index], rowOffsets[index])
+    end
+
+    for index = poolIndex + 1, #entryPool do
+        entryPool[index]:Hide()
+    end
+
+    QueueVisibleItems(first, last)
+end
+
+RefreshVisible = function()
+    if not panel or not panel:IsShown() then return end
+    RenderVisible()
+end
+
+local function ScheduleVisibleRefresh()
+    if scrollRefreshQueued then return end
+    scrollRefreshQueued = true
+
+    local function run()
+        scrollRefreshQueued = false
+        RefreshVisible()
+    end
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.03, run)
+    else
+        run()
+    end
 end
 
 local function GetRowIDs(row)
@@ -885,6 +1037,15 @@ local function SourceTotals(source)
     return vendor, auction + coin
 end
 
+local function CachedTotals(viewKey, source)
+    local key = viewKey .. ":" .. dataRevision
+    if totalsCache.key ~= key then
+        totalsCache.vendor, totalsCache.auction = SourceTotals(source)
+        totalsCache.key = key
+    end
+    return totalsCache.vendor, totalsCache.auction
+end
+
 local function RefreshMinimized()
     if not miniFrame or not miniLabel then return end
 
@@ -953,15 +1114,32 @@ end
 Refresh = function()
     if not panel or not panel:IsShown() then return end
 
-    auctionCache = {}
+    local now = GetTime and GetTime() or 0
+    if auctionCacheTime == 0 or (now - auctionCacheTime) > AUCTION_CACHE_TTL then
+        auctionCache = {}
+        vendorPriceCache = {}
+        auctionCacheTime = now
+        totalsCache.key = nil
+    end
 
     local scrollWidth = scroll:GetWidth()
     if not scrollWidth or scrollWidth < 50 then scrollWidth = FRAME_WIDTH - 16 end
     local rowWidth = scrollWidth - 22
     content:SetWidth(rowWidth)
 
-    local source = sessionView and BuildSessionSource() or BuildOverallSource()
-    local totalVendor, totalAuction = SourceTotals(source)
+    local viewKey = sessionView and "session" or "overall"
+    local cacheKey = viewKey .. ":" .. dataRevision
+    local source, rows
+    if rowCache.key == cacheKey then
+        source, rows = rowCache.source, rowCache.rows
+    else
+        source = sessionView and BuildSessionSource() or BuildOverallSource()
+        rows = BuildRows(source)
+        rowCache.key = cacheKey
+        rowCache.source = source
+        rowCache.rows = rows
+    end
+    local totalVendor, totalAuction = CachedTotals(viewKey, source)
     if totalsLabel then
         totalsLabel:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(totalVendor))
     end
@@ -973,8 +1151,6 @@ Refresh = function()
             totalsAuctionLabel:Hide()
         end
     end
-
-    local rows = BuildRows(source)
 
     local query = searchBox and searchBox:GetText() or ""
     local terms = Util.ParseFilterQuery(query, NAME_SPEC).terms
@@ -991,38 +1167,12 @@ Refresh = function()
         rows = matches
     end
 
-    local viewKey = sessionView and "session" or "overall"
     if viewKey ~= loaderView then
         itemLoader:Reset()
         loaderView = viewKey
     end
 
-    local batchCount = 0
-    for index = 1, #rows do
-        local items = rows[index].items
-        if items then
-            for itemID in pairs(items) do
-                local numericID = tonumber(itemID)
-                if numericID then
-                    loaderBatch[batchCount + 1] = numericID
-                    batchCount = batchCount + 1
-                end
-            end
-        end
-    end
-    itemLoader:AddItems(loaderBatch, batchCount)
-    itemLoader:Start()
-
-    local y = 0
-    for index = 1, #rows do
-        local entry = GetEntry(index)
-        local height = RenderEntry(entry, rows[index], y)
-        y = y + height + ROW_GAP
-    end
-
-    for index = #rows + 1, #entryPool do
-        entryPool[index]:Hide()
-    end
+    RebuildLayout(rows)
 
     if #rows == 0 then
         emptyLabel:SetWidth(math.max(rowWidth - 12, 50))
@@ -1037,8 +1187,15 @@ Refresh = function()
         content:SetHeight(50)
     else
         emptyLabel:Hide()
-        content:SetHeight(math.max(y, 1))
+        content:SetHeight(currentTotalHeight)
     end
+
+    local maxScroll = math.max(0, content:GetHeight() - (scroll:GetHeight() or 0))
+    if (scroll:GetVerticalScroll() or 0) > maxScroll then
+        scroll:SetVerticalScroll(maxScroll)
+    end
+
+    RenderVisible()
 end
 
 local function ScheduleSearch()
@@ -1080,6 +1237,8 @@ local function CreatePanel(parent)
         pendingMerge = nil
         checkLabel:SetText(sessionView and "Session loot" or "Overall loot")
         Refresh()
+        if scroll then scroll:SetVerticalScroll(0) end
+        RefreshVisible()
         if KwaLite and KwaLite.RefreshMinimized then KwaLite:RefreshMinimized() end
     end)
     checkbox:SetScript("OnEnter", function(self)
@@ -1121,6 +1280,7 @@ local function CreatePanel(parent)
     pcall(scroll.HookScript, scroll, "OnVerticalScroll", function()
         if panel and panel:IsShown() then
             itemLoader:MarkDirty()
+            ScheduleVisibleRefresh()
         end
     end)
 
@@ -1137,8 +1297,8 @@ local function CreatePanel(parent)
 
     panel:SetScript("OnShow", function()
         ResetItemLoader()
-        Refresh()
         if scroll then scroll:SetVerticalScroll(0) end
+        Refresh()
     end)
     panel:SetScript("OnHide", function()
         HideContextMenu()
@@ -1319,14 +1479,38 @@ function Tracker.Refresh()
     end
 end
 
+local panelRefreshQueued = false
+
+-- Kills and loot slots can fire several times in a row. Coalesce the rebuilds
+-- so the overall view does not do its expensive work once per event.
+local function SchedulePanelRefresh()
+    if panelRefreshQueued then return end
+    panelRefreshQueued = true
+
+    local function run()
+        panelRefreshQueued = false
+        if panel and panel:IsShown() then
+            Refresh()
+        end
+    end
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.2, run)
+    else
+        run()
+    end
+end
+
 function Tracker.OnDataChanged(reason)
+    dataRevision = dataRevision + 1
+
     if reason == "reset" then
         merges = {}
         pendingMerge = nil
         SaveMerges()
     end
     if panel and panel:IsShown() then
-        Refresh()
+        SchedulePanelRefresh()
     end
     if KwaLite and KwaLite.RefreshMinimized then
         KwaLite:RefreshMinimized()
