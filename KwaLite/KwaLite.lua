@@ -85,10 +85,14 @@ local function IsAddonEnabled(addon)
     return GetAddonDB(addon.id).enabled ~= false
 end
 
+local function IsAddonShown(addon)
+    return GetAddonDB(addon.id).showInSidebar ~= false
+end
+
 local function GetVisibleAddons()
     local list = {}
     for _, addon in ipairs(addons) do
-        if IsAddonEnabled(addon) then
+        if IsAddonEnabled(addon) and IsAddonShown(addon) then
             list[#list + 1] = addon
         end
     end
@@ -734,6 +738,9 @@ function KwaLite:RegisterAddon(config)
     if type(db.enabled) ~= "boolean" then
         db.enabled = config.enabledByDefault ~= false
     end
+    if type(db.showInSidebar) ~= "boolean" then
+        db.showInSidebar = config.showInSidebarByDefault ~= false
+    end
 
     if not activeID and db.enabled ~= false then activeID = addon.id end
 
@@ -801,7 +808,7 @@ function KwaLite:SetAddonEnabled(id, state)
         if addon.page then addon.page:Hide() end
         activeID = nil
         for _, entry in ipairs(addons) do
-            if IsAddonEnabled(entry) then
+            if IsAddonEnabled(entry) and IsAddonShown(entry) then
                 activeID = entry.id
                 if entry.page then entry.page:Show() end
                 break
@@ -817,6 +824,25 @@ function KwaLite:SetAddonEnabled(id, state)
         LayoutExpanded()
     end
     self:RefreshCurrent()
+end
+
+function KwaLite:IsAddonShownInSidebar(id)
+    local addon = addonsByID[id]
+    if not addon then return false end
+    return IsAddonShown(addon)
+end
+
+function KwaLite:SetAddonShownInSidebar(id, state)
+    local addon = addonsByID[id]
+    if not addon then return end
+
+    GetAddonDB(id).showInSidebar = state and true or false
+    UpdatePluginButtons()
+    if minimized then
+        LayoutMinimized()
+    else
+        LayoutExpanded()
+    end
 end
 
 function KwaLite:HasAddonSettings(id)

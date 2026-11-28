@@ -13,6 +13,7 @@ local MINIMIZED_ICON = "Interface\\Icons\\misc_arrowlup"
 local REFRESH_INTERVAL = 5
 
 local panel
+local settingsPanel
 local timeToLevelCheckbox
 local autoShareCheckbox
 local miniFrame
@@ -456,6 +457,38 @@ local function CreatePanel(parent)
     return panel
 end
 
+local function CreateSettings(parent)
+    if settingsPanel then return settingsPanel end
+
+    settingsPanel = CreateFrame("Frame", nil, parent)
+
+    local heading = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    heading:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 0, 0)
+    heading:SetText("|cffffd100Sidebar|r")
+
+    local showSidebarCheckbox = CreateFrame("CheckButton", nil, settingsPanel, "UICheckButtonTemplate")
+    showSidebarCheckbox:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 0, -28)
+    showSidebarCheckbox:SetSize(20, 20)
+    showSidebarCheckbox:SetChecked(KwaLite:IsAddonShownInSidebar(ADDON_ID))
+    showSidebarCheckbox:SetScript("OnClick", function(self)
+        KwaLite:SetAddonShownInSidebar(ADDON_ID, self:GetChecked() and true or false)
+    end)
+
+    local showSidebarLabel = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    showSidebarLabel:SetPoint("LEFT", showSidebarCheckbox, "RIGHT", 1, 0)
+    showSidebarLabel:SetJustifyH("LEFT")
+    showSidebarLabel:SetText("Show in sidebar")
+
+    local description = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    description:SetPoint("TOPLEFT", showSidebarCheckbox, "BOTTOMLEFT", 0, -6)
+    description:SetPoint("TOPRIGHT", settingsPanel, "TOPRIGHT", -8, -58)
+    description:SetJustifyH("LEFT")
+    description:SetWordWrap(true)
+    description:SetText("When unchecked, the Misc Utilities icon is hidden from the plugin bar, but features keep working.")
+
+    return settingsPanel
+end
+
 -- Registration ---------------------------------------------------------------
 
 if KwaLite and KwaLite.RegisterAddon and KwaLite.Util then
@@ -464,7 +497,9 @@ if KwaLite and KwaLite.RegisterAddon and KwaLite.Util then
         name = "Misc Utilities",
         icon = PLUGIN_ICON,
         priority = 999,
+        showInSidebarByDefault = true,
         createPanel = CreatePanel,
+        createSettings = CreateSettings,
         renderMinimizedOptions = false,
         minimizedViews = {
             {

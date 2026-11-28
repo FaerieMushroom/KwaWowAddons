@@ -13,3 +13,7 @@ Miscellaneous utility plugin for **KwaLite** on **WoW Forever (16001)**. Require
 - Select the **Misc Utilities** plugin from the right-side icon bar.
 - Tick **Time to Level** under **Minimized Displays** to show the compact time-to-level readout while Kwa Lite is minimized. Unticking it stops the XP tracker entirely.
 - Tick **Auto share newly accepted quests** under **Functionality** to share new quests with your group.
+
+## Options
+
+Open the Misc Utilities settings page from Kwa Lite's Settings. **Show in sidebar** (default on) controls whether the plugin icon appears in the right-side plugin bar. When off, the icon is hidden but time-to-level and quest sharing still work.

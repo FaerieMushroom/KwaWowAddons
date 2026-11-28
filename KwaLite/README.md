@@ -107,6 +107,8 @@ KwaLite:GetAddons()                  -- all registered addon tables, sorted
 KwaLite:GetAddon(id)
 KwaLite:IsAddonEnabled(id)
 KwaLite:SetAddonEnabled(id, false)   -- hides the plugin and its page
+KwaLite:IsAddonShownInSidebar(id)    -- true when shown in the plugin bar
+KwaLite:SetAddonShownInSidebar(id, false) -- hide from plugin bar; features keep working
 KwaLite:IsMinimizedViewShown(id, viewID) -- true when that view is enabled
 KwaLite:SetMinimizedViewShown(id, viewID, checked)
 KwaLite:HasAddonSettings(id)         -- true only when createSettings was provided
@@ -114,4 +116,6 @@ KwaLite:CreateAddonSettings(id, parent)
 ```
 
 `SetAddonEnabled` persists to `KwaLiteDB`. Disabling the active plugin switches
-to the next enabled plugin.
+to the next enabled plugin. `showInSidebarByDefault` controls whether a plugin
+starts in the plugin bar; `SetAddonShownInSidebar` only hides/shows the icon
+and does not disable the plugin.
