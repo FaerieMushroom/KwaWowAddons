@@ -27,7 +27,14 @@ local lastPlayerXP
 local lastPlayerXPMax
 local lastPlayerLevel
 local refreshElapsed = 0
-local pendingShareQuestID
+
+-- Accepting several quests in one burst should share each one. Quest sharing
+-- reads a selected quest, so queue bursts and share one at a time with a small
+-- delay instead of selecting/pushing several quests in the same frame.
+local shareQueue = {}
+local sharingQuest = false
+local QUEST_SHARE_DELAY = 0.3
+local PumpShareQueue
 
 local isSecret = function(v)
     return (issecretvalue and issecretvalue(v)) or false
@@ -279,45 +286,79 @@ local function IsQuestPushable(questID, index)
     return false
 end
 
+local function CanShareQuest(questID)
+    if not questID or CountGroupMembers() <= 1 then return false end
+    if UnitInBattleground and UnitInBattleground("player") then return false end
+    if type(QuestLogPushQuest) ~= "function" then return false end
+    return true
+end
+
 local function ShareQuest(questID)
-    if not questID or CountGroupMembers() <= 1 then return end
-    if UnitInBattleground and UnitInBattleground("player") then return end
-    if type(QuestLogPushQuest) ~= "function" then return end
-    if InCombatLockdown and InCombatLockdown() then
-        pendingShareQuestID = questID
+    if not CanShareQuest(questID) then return false end
+
+    local index = FindQuestLogIndex(questID)
+    if not index then return false end
+    if not IsQuestPushable(questID, index) then return false end
+
+    local ok = pcall(function()
+        -- QuestLogPushQuest shares the selected quest. Forever uses modern
+        -- quest-ID selection; Classic uses the selected log index. Some clients
+        -- also accept the log index directly.
+        if SelectQuestLogEntry then
+            pcall(SelectQuestLogEntry, index)
+        end
+        if C_QuestLog and C_QuestLog.SetSelectedQuest then
+            C_QuestLog.SetSelectedQuest(questID)
+        end
+        QuestLogPushQuest(index)
+    end)
+
+    return ok and true or false
+end
+
+local function ScheduleNextShare()
+    sharingQuest = false
+    if C_Timer and C_Timer.After then
+        C_Timer.After(QUEST_SHARE_DELAY, PumpShareQueue)
+    else
+        PumpShareQueue()
+    end
+end
+
+PumpShareQueue = function()
+    if sharingQuest then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    if #shareQueue == 0 then return end
+
+    -- Do not retain quests accepted while solo, in a battleground, or on a
+    -- client without quest sharing. Shareable quests are only shared once.
+    if not CanShareQuest(shareQueue[1]) then
+        table.remove(shareQueue, 1)
+        ScheduleNextShare()
         return
     end
 
-    local index = FindQuestLogIndex(questID)
-    if not index then return end
-    if not IsQuestPushable(questID, index) then return end
-
-    pcall(function()
-        if C_QuestLog and C_QuestLog.SetSelectedQuest then
-            C_QuestLog.SetSelectedQuest(questID)
-        elseif SelectQuestLogEntry then
-            SelectQuestLogEntry(index)
-        end
-        QuestLogPushQuest()
-    end)
-end
-
-local function TryPendingShare()
-    if not pendingShareQuestID then return end
-    if InCombatLockdown and InCombatLockdown() then return end
-    local questID = pendingShareQuestID
-    pendingShareQuestID = nil
+    local questID = table.remove(shareQueue, 1)
+    sharingQuest = true
     ShareQuest(questID)
+    ScheduleNextShare()
 end
 
 local function QueueShare(questID)
     if not questID then return end
+
+    -- QUEST_ACCEPTED can fire several times in one frame. Avoid duplicates
+    -- while still allowing the same quest ID again later if re-accepted.
+    for index = #shareQueue, 1, -1 do
+        if shareQueue[index] == questID then return end
+    end
+
+    shareQueue[#shareQueue + 1] = questID
+
     if C_Timer and C_Timer.After then
-        C_Timer.After(0.2, function()
-            ShareQuest(questID)
-        end)
+        C_Timer.After(QUEST_SHARE_DELAY, PumpShareQueue)
     else
-        ShareQuest(questID)
+        PumpShareQueue()
     end
 end
 
@@ -329,7 +370,8 @@ local function UpdateQuestSharing()
     else
         questFrame:UnregisterEvent("QUEST_ACCEPTED")
         questFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
-        pendingShareQuestID = nil
+        shareQueue = {}
+        sharingQuest = false
     end
 end
 
@@ -475,7 +517,7 @@ end)
 questFrame = CreateFrame("Frame")
 questFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "PLAYER_REGEN_ENABLED" then
-        TryPendingShare()
+        PumpShareQueue()
     elseif event == "QUEST_ACCEPTED" then
         if not EnsureDB().autoShareQuests then return end
         -- Forever sends only the quest ID; Classic sends log index then ID.
