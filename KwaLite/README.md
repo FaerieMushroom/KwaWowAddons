@@ -8,8 +8,8 @@ Shared window and minimized-bar framework for Kwa addons on **WoW Forever (16001
 - The window opens automatically once per login/reload, starting minimized.
 - The title bar shows the active addon's name, with a 16×16 plugin icon on the right for each registered addon.
 - Other addons register a panel with `KwaLite:RegisterAddon`, and can optionally provide a minimized widget.
-- Each addon that provides a minimized widget has a checkbox at the top of the page: when checked, that addon's compact info appears while the window is minimized.
-- Addons without a minimized widget have no minimized display and no checkbox; their page uses the full panel height.
+- Each addon that provides one or more minimized views has a checkbox per view at the top of the page: when checked, that view's compact info appears while the window is minimized. Plugins can set `renderMinimizedOptions = false` and render their own checkboxes inside the page; use `KwaLite:SetMinimizedViewShown` to toggle views.
+- Addons without minimized views have no minimized display and no checkbox; their page uses the full panel height.
 - Plugins are ordered by their `priority` value (lowest first); plugins with equal priority keep registration order.
 - Plugins are enabled by default. A plugin can set `enabledByDefault = false` to start disabled. A plugin can be disabled from the Settings page; disabled plugins are removed from the plugin bar and minimized bar.
 - A plugin can optionally register a settings panel. The Settings page shows a **Settings** button only for plugins that provide `createSettings`.
@@ -63,17 +63,30 @@ KwaLite:RegisterAddon({
         -- ... build page contents ...
         return page
     end,
-    -- Optional: build the compact widget shown in the minimized bar.
+    -- Optional: build one or more compact widgets shown in the minimized bar.
     -- Omit this to give the plugin no minimized display.
-    createMinimized = function(parent, addon)
-        local widget = CreateFrame("Frame", nil, parent)
-        -- ... build compact contents ...
-        return widget
-    end,
+    minimizedViews = {
+        {
+            id = "myView",                 -- stable, unique within the plugin
+            label = "Time to Level",       -- checkbox label after "Minimized window:"
+            icon = "Interface\\Icons\\INV_Misc_QuestionMark",
+            showByDefault = false,
+            create = function(parent, addon, view)
+                local widget = CreateFrame("Frame", nil, parent)
+                -- ... build compact contents ...
+                return widget
+            end,
+            refresh = function(widget, addon, view) end, -- called when shown/refreshed
+            onToggle = function(checked, addon, view) end, -- optional
+        },
+    },
+    -- Legacy single-view shorthand, equivalent to one minimizedViews entry.
+    -- createMinimized = function(parent, addon) ... end,
+    -- refreshMinimized = function(widget, addon) end,
+    -- Optional: render minimized checkboxes inside your own page instead.
+    -- renderMinimizedOptions = false,
     -- Optional: refresh the page, usually on data changes.
     refresh = function(page, addon) end,
-    -- Optional: refresh the compact widget and update its width.
-    refreshMinimized = function(widget, addon) end,
     -- Optional: build this plugin's settings panel. The Settings page shows a
     -- Settings button only when this is provided.
     createSettings = function(parent, addon)
@@ -94,6 +107,8 @@ KwaLite:GetAddons()                  -- all registered addon tables, sorted
 KwaLite:GetAddon(id)
 KwaLite:IsAddonEnabled(id)
 KwaLite:SetAddonEnabled(id, false)   -- hides the plugin and its page
+KwaLite:IsMinimizedViewShown(id, viewID) -- true when that view is enabled
+KwaLite:SetMinimizedViewShown(id, viewID, checked)
 KwaLite:HasAddonSettings(id)         -- true only when createSettings was provided
 KwaLite:CreateAddonSettings(id, parent)
 ```

@@ -28,8 +28,7 @@ local minimizeButton
 local expandButton
 local pluginBar
 local optionRow
-local minimizeCheckbox
-local minimizeCheckLabel
+local optionCheckboxPool = {}
 local pageHost
 local contextMenu
 local contextOverlay
@@ -62,8 +61,24 @@ local function GetAddonDB(id)
     return entry
 end
 
-local function IsAddonChecked(addon)
-    return GetAddonDB(addon.id).showMinimized and true or false
+-- A plugin can register several compact widgets. Legacy single-widget plugins
+-- are normalized into one view whose state lives in `showMinimized`.
+local function IsViewChecked(addon, view)
+    local db = GetAddonDB(addon.id)
+    if view.legacy then
+        return db.showMinimized and true or false
+    end
+    return type(db.minimizedViews) == "table" and db.minimizedViews[view.id] and true or false
+end
+
+local function SetViewChecked(addon, view, state)
+    local db = GetAddonDB(addon.id)
+    if view.legacy then
+        db.showMinimized = state and true or false
+    else
+        if type(db.minimizedViews) ~= "table" then db.minimizedViews = {} end
+        db.minimizedViews[view.id] = state and true or false
+    end
 end
 
 local function IsAddonEnabled(addon)
@@ -171,22 +186,31 @@ end
 
 local function RefreshMinimizedWidgets()
     for _, addon in ipairs(addons) do
-        local widget = addon.minimizedWidget
-        if widget and IsAddonEnabled(addon) and IsAddonChecked(addon) and addon.refreshMinimized then
-            pcall(addon.refreshMinimized, widget, addon)
+        if IsAddonEnabled(addon) then
+            for _, view in ipairs(addon.minimizedViews or {}) do
+                if view.widget and IsViewChecked(addon, view) then
+                    if view.legacy then
+                        if addon.refreshMinimized then
+                            pcall(addon.refreshMinimized, view.widget, addon)
+                        end
+                    elseif view.refresh then
+                        pcall(view.refresh, view.widget, addon, view)
+                    end
+                end
+            end
         end
     end
 end
 
-local function GetMinimizedIcon(addon)
-    local icon = addon.minimizedIcon
+local function GetViewIcon(addon, view)
+    local icon = view.iconTexture
     if not icon and titleBar then
         icon = titleBar:CreateTexture(nil, "ARTWORK")
         icon:SetSize(MINIMIZED_ICON_SIZE, MINIMIZED_ICON_SIZE)
-        addon.minimizedIcon = icon
+        view.iconTexture = icon
     end
     if icon then
-        icon:SetTexture(addon.icon or Util.DEFAULT_ICON)
+        icon:SetTexture(view.icon or addon.icon or Util.DEFAULT_ICON)
     end
     return icon
 end
@@ -196,11 +220,11 @@ local function LayoutMinimized()
 
     local x = MINIMIZED_LEFT_PADDING
     for _, addon in ipairs(addons) do
-        local widget = addon.minimizedWidget
-        local icon = addon.minimizedIcon
-        if widget then
-            if IsAddonEnabled(addon) and IsAddonChecked(addon) then
-                icon = GetMinimizedIcon(addon)
+        for _, view in ipairs(addon.minimizedViews or {}) do
+            local widget = view.widget
+            local icon = view.iconTexture
+            if widget and IsAddonEnabled(addon) and IsViewChecked(addon, view) then
+                icon = GetViewIcon(addon, view)
                 icon:ClearAllPoints()
                 icon:SetPoint("LEFT", titleBar, "LEFT", x, 0)
                 icon:Show()
@@ -214,7 +238,7 @@ local function LayoutMinimized()
                 if width <= 0 then width = 72 end
                 x = x + width + MINIMIZED_WIDGET_GAP
             else
-                widget:Hide()
+                if widget then widget:Hide() end
                 if icon then icon:Hide() end
             end
         end
@@ -227,6 +251,47 @@ local function LayoutMinimized()
     frame:SetSize(width, MINIMIZED_HEIGHT)
 end
 
+local function GetOptionCheckbox(index)
+    local checkbox = optionCheckboxPool[index]
+    if not checkbox then
+        checkbox = CreateFrame("CheckButton", nil, optionRow, "UICheckButtonTemplate")
+        checkbox:SetPoint("TOPLEFT", optionRow, "TOPLEFT", 0, -((index - 1) * OPTION_HEIGHT))
+        checkbox:SetSize(20, 20)
+        checkbox:SetScript("OnClick", function(self)
+            local addon = addonsByID[activeID]
+            local view = self.view
+            if not addon or not view then return end
+
+            local state = self:GetChecked() and true or false
+            SetViewChecked(addon, view, state)
+            RefreshMinimizedWidgets()
+            if minimized then LayoutMinimized() end
+            if type(view.onToggle) == "function" then
+                pcall(view.onToggle, state, addon, view)
+            end
+        end)
+        checkbox:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Minimized bar", 1, 0.82, 0)
+            local label = self.view and self.view.label or "this view"
+            GameTooltip:AddLine("Checked: show " .. label .. " while Kwa Lite is minimized.", 1, 1, 1, true)
+            GameTooltip:AddLine("Unchecked: hide it from the minimized bar.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        checkbox:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+
+        local label = optionRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        label:SetPoint("LEFT", checkbox, "RIGHT", 1, 0)
+        label:SetJustifyH("LEFT")
+        checkbox.label = label
+
+        optionCheckboxPool[index] = checkbox
+    end
+    return checkbox
+end
+
 local function UpdateOptionRow()
     if not optionRow then return end
 
@@ -234,6 +299,11 @@ local function UpdateOptionRow()
     if not addon then
         optionRow:Hide()
         if titleText then titleText:SetText("|cffffd100Kwa Lite|r") end
+        for _, checkbox in ipairs(optionCheckboxPool) do
+            checkbox.view = nil
+            checkbox:Hide()
+            checkbox.label:Hide()
+        end
         return
     end
 
@@ -241,15 +311,42 @@ local function UpdateOptionRow()
         titleText:SetText("|cffffd100" .. addon.name .. "|r")
     end
 
-    -- Plugins are not required to provide a minimized widget.
-    if not addon.minimizedWidget then
+    if addon.renderMinimizedOptions == false then
         optionRow:Hide()
+        for _, checkbox in ipairs(optionCheckboxPool) do
+            checkbox.view = nil
+            checkbox:Hide()
+            checkbox.label:Hide()
+        end
         return
     end
 
-    optionRow:Show()
-    minimizeCheckbox:SetChecked(IsAddonChecked(addon))
-    minimizeCheckLabel:SetText("Show " .. addon.name .. " when minimized")
+    local shown = 0
+    for _, view in ipairs(addon.minimizedViews or {}) do
+        if view.widget then
+            shown = shown + 1
+            local checkbox = GetOptionCheckbox(shown)
+            checkbox.view = view
+            checkbox:SetChecked(IsViewChecked(addon, view))
+            checkbox.label:SetText("Minimized window: " .. (view.label or addon.name))
+            checkbox:Show()
+            checkbox.label:Show()
+        end
+    end
+
+    for index = shown + 1, #optionCheckboxPool do
+        local checkbox = optionCheckboxPool[index]
+        checkbox.view = nil
+        checkbox:Hide()
+        checkbox.label:Hide()
+    end
+
+    if shown == 0 then
+        optionRow:Hide()
+    else
+        optionRow:SetHeight(shown * OPTION_HEIGHT)
+        optionRow:Show()
+    end
 end
 
 local function UpdatePluginButtons()
@@ -327,15 +424,21 @@ local function LayoutExpanded()
     end
 
     local active = addonsByID[activeID]
-    local showOptions = active and active.minimizedWidget ~= nil
+    local viewCount = 0
+    if active and active.renderMinimizedOptions ~= false then
+        for _, view in ipairs(active.minimizedViews or {}) do
+            if view.widget then viewCount = viewCount + 1 end
+        end
+    end
 
     optionRow:ClearAllPoints()
-    if showOptions then
+    if viewCount > 0 then
+        local optionsHeight = viewCount * OPTION_HEIGHT
         optionRow:SetPoint("TOPLEFT", frame, "TOPLEFT", CONTENT_LEFT, -y)
         optionRow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -CONTENT_RIGHT, -y)
-        optionRow:SetHeight(OPTION_HEIGHT)
+        optionRow:SetHeight(optionsHeight)
         optionRow:Show()
-        y = y + OPTION_HEIGHT
+        y = y + optionsHeight
     else
         optionRow:Hide()
     end
@@ -368,11 +471,9 @@ local function ApplyMinimizedState()
         if minimizeButton then minimizeButton:Show() end
         if expandButton then expandButton:Hide() end
         for _, addon in ipairs(addons) do
-            if addon.minimizedWidget then
-                addon.minimizedWidget:Hide()
-            end
-            if addon.minimizedIcon then
-                addon.minimizedIcon:Hide()
+            for _, view in ipairs(addon.minimizedViews or {}) do
+                if view.widget then view.widget:Hide() end
+                if view.iconTexture then view.iconTexture:Hide() end
             end
         end
         LayoutExpanded()
@@ -479,31 +580,6 @@ local function CreateUI()
     optionRow = CreateFrame("Frame", nil, frame)
     optionRow:SetHeight(OPTION_HEIGHT)
 
-    minimizeCheckbox = CreateFrame("CheckButton", nil, optionRow, "UICheckButtonTemplate")
-    minimizeCheckbox:SetPoint("TOPLEFT", optionRow, "TOPLEFT", 0, 0)
-    minimizeCheckbox:SetSize(20, 20)
-    minimizeCheckbox:SetScript("OnClick", function(self)
-        local addon = addonsByID[activeID]
-        if not addon then return end
-        GetAddonDB(addon.id).showMinimized = self:GetChecked() and true or false
-        RefreshMinimizedWidgets()
-        if minimized then LayoutMinimized() end
-    end)
-    minimizeCheckbox:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Minimized bar", 1, 0.82, 0)
-        GameTooltip:AddLine("Checked: show this addon's compact info while Kwa Lite is minimized.", 1, 1, 1, true)
-        GameTooltip:AddLine("Unchecked: hide it from the minimized bar.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    minimizeCheckbox:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-
-    minimizeCheckLabel = optionRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    minimizeCheckLabel:SetPoint("LEFT", minimizeCheckbox, "RIGHT", 1, 0)
-    minimizeCheckLabel:SetJustifyH("LEFT")
-
     pageHost = CreateFrame("Frame", nil, frame)
     pageHost:Hide()
 
@@ -532,9 +608,9 @@ local function CreateAddonWidgets(addon)
     end
     addon.page = page
 
-    local widget
-    if type(addon.createMinimized) == "function" then
-        widget = addon.createMinimized(titleBar, addon)
+    addon.minimizedWidget = nil
+    for _, view in ipairs(addon.minimizedViews or {}) do
+        local widget = view.create(titleBar, addon, view)
         if widget then
             if widget.SetHeight then widget:SetHeight(MINIMIZED_HEIGHT - 8) end
             if widget.SetFrameLevel and titleBar then
@@ -542,8 +618,11 @@ local function CreateAddonWidgets(addon)
             end
             widget:Hide()
         end
+        view.widget = widget
+        if widget and not addon.minimizedWidget then
+            addon.minimizedWidget = widget
+        end
     end
-    addon.minimizedWidget = widget
 
     if page then
         page:SetShown(addon.id == activeID)
@@ -563,11 +642,54 @@ function KwaLite:RegisterAddon(config)
     if config.createMinimized ~= nil and type(config.createMinimized) ~= "function" then
         error("KwaLite:RegisterAddon createMinimized must be a function when provided")
     end
+    if config.minimizedViews ~= nil and type(config.minimizedViews) ~= "table" then
+        error("KwaLite:RegisterAddon minimizedViews must be a table when provided")
+    end
     if config.createSettings ~= nil and type(config.createSettings) ~= "function" then
         error("KwaLite:RegisterAddon createSettings must be a function when provided")
     end
     if addonsByID[config.id] then
         return addonsByID[config.id]
+    end
+
+    -- Normalize both registration styles into a single list of minimized views.
+    local minimizedViews = {}
+    if type(config.minimizedViews) == "table" and #config.minimizedViews > 0 then
+        for index, entry in ipairs(config.minimizedViews) do
+            if type(entry) ~= "table" or not entry.id or entry.id == "" then
+                error("KwaLite:RegisterAddon minimizedViews entries require an id")
+            end
+            if type(entry.create) ~= "function" then
+                error("KwaLite:RegisterAddon minimizedViews entries require create(parent)")
+            end
+            if entry.refresh ~= nil and type(entry.refresh) ~= "function" then
+                error("KwaLite:RegisterAddon minimizedViews refresh must be a function")
+            end
+            if entry.onToggle ~= nil and type(entry.onToggle) ~= "function" then
+                error("KwaLite:RegisterAddon minimizedViews onToggle must be a function")
+            end
+            minimizedViews[#minimizedViews + 1] = {
+                id = entry.id,
+                label = entry.label or entry.id,
+                icon = entry.icon,
+                create = entry.create,
+                refresh = entry.refresh,
+                onToggle = entry.onToggle,
+                showByDefault = entry.showByDefault,
+                legacy = false,
+                order = index,
+            }
+        end
+    elseif type(config.createMinimized) == "function" then
+        minimizedViews[1] = {
+            id = config.id,
+            label = config.minimizedLabel or config.name or config.id,
+            icon = config.minimizedIcon or config.icon,
+            create = config.createMinimized,
+            refresh = config.refreshMinimized,
+            showByDefault = config.showMinimizedByDefault,
+            legacy = true,
+        }
     end
 
     local addon = {
@@ -580,6 +702,8 @@ function KwaLite:RegisterAddon(config)
         refresh = config.refresh,
         refreshMinimized = config.refreshMinimized,
         createSettings = config.createSettings,
+        minimizedViews = minimizedViews,
+        renderMinimizedOptions = config.renderMinimizedOptions,
     }
     addonOrder = addonOrder + 1
     addon.order = addonOrder
@@ -598,6 +722,14 @@ function KwaLite:RegisterAddon(config)
     local db = GetAddonDB(addon.id)
     if type(db.showMinimized) ~= "boolean" then
         db.showMinimized = config.showMinimizedByDefault ~= false
+    end
+    if type(db.minimizedViews) ~= "table" then
+        db.minimizedViews = {}
+    end
+    for _, view in ipairs(addon.minimizedViews) do
+        if not view.legacy and type(db.minimizedViews[view.id]) ~= "boolean" then
+            db.minimizedViews[view.id] = view.showByDefault ~= false
+        end
     end
     if type(db.enabled) ~= "boolean" then
         db.enabled = config.enabledByDefault ~= false
@@ -715,6 +847,42 @@ function KwaLite:RefreshMinimized()
     if minimized then
         LayoutMinimized()
     end
+end
+
+-- True when the given minimized view is enabled and shown in the minimized
+-- bar. Plugins can use this to avoid doing work for hidden views.
+function KwaLite:IsMinimizedViewShown(addonID, viewID)
+    local addon = addonsByID[addonID]
+    if not addon then return false end
+    for _, view in ipairs(addon.minimizedViews or {}) do
+        if view.id == viewID then
+            return IsViewChecked(addon, view)
+        end
+    end
+    return false
+end
+
+function KwaLite:SetMinimizedViewShown(addonID, viewID, checked)
+    local addon = addonsByID[addonID]
+    if not addon then return false end
+
+    local target
+    for _, view in ipairs(addon.minimizedViews or {}) do
+        if view.id == viewID then
+            target = view
+            break
+        end
+    end
+    if not target then return false end
+
+    local state = checked and true or false
+    SetViewChecked(addon, target, state)
+    RefreshMinimizedWidgets()
+    if minimized then LayoutMinimized() end
+    if type(target.onToggle) == "function" then
+        pcall(target.onToggle, state, addon, target)
+    end
+    return true
 end
 
 function KwaLite:IsMinimized()

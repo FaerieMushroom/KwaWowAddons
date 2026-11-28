@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: KwaMiscUtilities (WoW Forever)
+## Notes: Miscellaneous utilities plugin for KwaLite.
+## Dependencies: KwaLite
+## SavedVariables: KwaMiscUtilitiesDB
+
+KwaMiscUtilities.lua

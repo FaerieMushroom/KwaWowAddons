@@ -9,7 +9,7 @@ ADDONS=(
     "KwaLite"
     "KwaUtils"
     "KwaKillCounter"
-    "KwaXpTracker"
+    "KwaMiscUtilities"
     "KwaAuctionSearch"
     "KwaPetSkills"
     "KwaUnitLabeler"
