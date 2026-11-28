@@ -285,14 +285,22 @@ local function ShowMobTooltip(entryWidget)
         tooltip:AddLine("Merged: " .. table.concat(row.memberNames, ", "), 0.6, 0.8, 1, true)
     end
     tooltip:AddLine(" ")
-    AddDoubleLine(tooltip, "Kills (session):", tostring(row.sessionKills or 0))
-    AddDoubleLine(tooltip, "Kills (total):", tostring(row.totalKills or 0))
-    if (row.coin or 0) > 0 then
-        AddDoubleLine(tooltip, "Coin dropped:", FormatMoney(row.coin))
-    end
-    AddDoubleLine(tooltip, "Vendor total:", FormatMoney(row.vendor or 0))
-    if HasAuctionData() then
-        AddDoubleLine(tooltip, "Auction total:", FormatMoney(SumAuction(row.items) + (row.coin or 0)))
+    local looted = row.looted or 0
+    local coin = row.coin or 0
+    local vendor = row.vendor or 0
+    local auction = SumAuction(row.items) + coin
+
+    if looted > 0 then
+        AddDoubleLine(tooltip, "Avg vendor:", FormatMoney(vendor / looted))
+        if HasAuctionData() then
+            AddDoubleLine(tooltip, "Avg auction:", FormatMoney(auction / looted))
+        end
+        local avgCoin = coin / looted
+        if avgCoin > 1 then
+            AddDoubleLine(tooltip, "Avg coin:", FormatMoney(avgCoin))
+        end
+    else
+        tooltip:AddLine("No loot recorded yet", 0.65, 0.65, 0.65)
     end
     tooltip:AddLine(" ")
     tooltip:AddLine("Ctrl+Click to merge", 0.65, 0.65, 0.65)
@@ -475,12 +483,12 @@ local function CreateEntryWidget()
     entry.vendor = vendor
 
     local auction = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    auction:SetPoint("TOPLEFT", entry, "TOPLEFT", 7, -48)
+    auction:SetPoint("TOPLEFT", entry, "TOPLEFT", 7, -34)
     auction:SetJustifyH("LEFT")
     entry.auction = auction
 
     local coin = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    coin:SetPoint("TOPLEFT", entry, "TOPLEFT", 7, -34)
+    coin:SetPoint("TOPLEFT", entry, "TOPLEFT", 7, -48)
     coin:SetJustifyH("LEFT")
     entry.coin = coin
 
@@ -524,6 +532,7 @@ local function BuildSessionSource()
             seq = sessionEntry.seq or 0,
             sessionKills = sessionEntry.kills or 0,
             totalKills = (backend and backend.count) or (sessionEntry.kills or 0),
+            looted = sessionEntry.looted or 0,
             items = sessionEntry.items or {},
             vendor = sessionEntry.vendor or 0,
             coin = sessionEntry.coin or 0,
@@ -546,6 +555,7 @@ local function BuildOverallSource()
                 seq = sessionEntry and sessionEntry.seq or 0,
                 sessionKills = sessionEntry and sessionEntry.kills or 0,
                 totalKills = data.count or 0,
+                looted = data.looted or 0,
                 items = data.itemCounts or data.items or {},
                 vendor = data.totalVendorValue or 0,
                 coin = data.coin or 0,
@@ -574,6 +584,7 @@ local function BuildRows(source)
                 seq = item.seq or 0,
                 sessionKills = item.sessionKills or 0,
                 totalKills = item.totalKills or 0,
+                looted = item.looted or 0,
                 items = item.items or {},
                 itemCount = CountPositiveItems(item.items),
                 vendor = item.vendor or 0,
@@ -594,6 +605,7 @@ local function BuildRows(source)
             local seq = 0
             local sessionKills = 0
             local totalKills = 0
+            local looted = 0
 
             for memberID in pairs(group.members) do
                 local member = byID[memberID]
@@ -605,6 +617,7 @@ local function BuildRows(source)
                     coin = coin + (member.coin or 0)
                     sessionKills = sessionKills + (member.sessionKills or 0)
                     totalKills = totalKills + (member.totalKills or 0)
+                    looted = looted + (member.looted or 0)
                     for itemID, count in pairs(member.items or {}) do
                         mergedItems[itemID] = (mergedItems[itemID] or 0) + count
                     end
@@ -619,6 +632,7 @@ local function BuildRows(source)
                     seq = seq,
                     sessionKills = sessionKills,
                     totalKills = totalKills,
+                    looted = looted,
                     items = mergedItems,
                     itemCount = CountPositiveItems(mergedItems),
                     vendor = vendor,
@@ -671,19 +685,17 @@ local function RenderEntry(entry, row, y)
 
     entry.vendor:SetText("|cff9d9d9dVendor:|r " .. FormatMoney(row.vendor or 0))
     local coin = row.coin or 0
+    if HasAuctionData() then
+        entry.auction:SetText("|cff9d9d9dAuction:|r " .. FormatMoney(SumAuction(row.items) + coin))
+        entry.auction:Show()
+    else
+        entry.auction:Hide()
+    end
     if coin > 0 then
         entry.coin:SetText("|cff9d9d9dCoin:|r " .. FormatMoney(coin))
         entry.coin:Show()
     else
         entry.coin:Hide()
-    end
-    if HasAuctionData() then
-        entry.auction:ClearAllPoints()
-        entry.auction:SetPoint("TOPLEFT", entry, "TOPLEFT", 7, coin > 0 and -48 or -34)
-        entry.auction:SetText("|cff9d9d9dAuction:|r " .. FormatMoney(SumAuction(row.items) + coin))
-        entry.auction:Show()
-    else
-        entry.auction:Hide()
     end
 
     for index = 1, #items do

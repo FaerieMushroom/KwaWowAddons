@@ -56,13 +56,14 @@ Another page in the Kwa Lite plugin bar. Opening it lists every recorded item, s
 ## 🧾 Loot Tracker
 - The panel starts empty each time the addon loads and only lists mobs killed during that session.
 - Each mob's section moves to the top when it is killed again.
-- Each mob shows its kill count and direct coin drops (gold/silver/copper) for the selected view; merged groups show combined totals.
+- Each mob shows its kill count, vendor value, auction value, and direct coin drops (only when the mob dropped raw coins); merged groups show combined totals.
 - The top of the panel shows the current view's total vendor and auction value.
 - `Session loot` checkbox: checked shows this session's drops, unchecked shows all recorded loot.
 - Use the `-` button in the title bar to minimize; the compact bar shows the minimized info for each checked addon, with a `+` button to expand.
 - Right-click the title bar or minimized bar for the `Close Kwa` option.
 - Merged groups persist across reloads and game sessions.
 - Hover items for item tooltips with per-item vendor/auction values.
+- Hovering a mob shows its name plus average vendor, auction, and raw coin value per looted corpse. The average coin line is hidden when it is 1 copper or less.
 - Missing item names are loaded a few at a time in the background, with the list refreshing as data arrives, so unloaded items no longer stay as `Item <id>`.
 - **Ctrl+Click** a mob name to start a merge (the first mob gets a green outline), then Ctrl+Click another mob to merge their tracker entries. Merged entries show the first mob's name with `+X`.
 - **Right-click** a mob name to open a context menu:
