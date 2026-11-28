@@ -7,7 +7,7 @@ DEST_DIR="/home/keira/.local/share/Steam/steamapps/compatdata/2880841926/pfx/dri
 
 mkdir -p "$DEST_DIR"
 
-for f in KwaUtils.toc KwaVendorProfit.lua; do
+for f in KwaUtils.toc KwaVendorProfit.lua KwaProfitableCrafts.lua; do
     if [[ ! -f "$SCRIPT_DIR/$f" ]]; then
         echo "Missing file: $SCRIPT_DIR/$f" >&2
         exit 1

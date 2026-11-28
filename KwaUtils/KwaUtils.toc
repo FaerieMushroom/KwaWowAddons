@@ -1,6 +1,7 @@
 ## Interface: 16001
 ## Title: KwaUtils (WoW Forever)
-## Notes: General utility addons for WoW Forever. Adds vendor profit to profession crafting pages.
+## Notes: General utility addons for WoW Forever. Adds vendor profit to profession crafting pages, plus filter/highlight of profitable vendor crafts.
 ## OptionalDeps: Auctionator
 
 KwaVendorProfit.lua
+KwaProfitableCrafts.lua
