@@ -351,12 +351,7 @@ local function MatchesSearch(meta, count, parsed)
 end
 
 local function CharacterLabel(char, key)
-    local label = char.display or char.name or key
-    local currentRealm = GetRealmName()
-    if char.realm and currentRealm and char.realm ~= currentRealm then
-        label = label .. " (" .. char.realm .. ")"
-    end
-    return label
+    return char.display or char.name or key
 end
 
 local function HasItems(container)
